@@ -58,8 +58,7 @@
   </head>
   <body>
     <div class="container">
-      <h1>키움증권 프로그램 순매수 순위 (Mock API)</h1>
-      <div id="timestamp">최종 업데이트: 대기 중...</div>
+
       <div id="output"></div>
     </div>
 
@@ -126,9 +125,9 @@
         table.innerHTML = `
           <thead>
             <tr>
-              <th>순위</th>
+
               <th>종목명</th>
-              <th>현재가</th>
+
               <th>등락률</th>
               <th>순매수 금액</th>
             </tr>
@@ -138,9 +137,9 @@
               .map(
                 (item) => `
               <tr>
-                <td>${item.rank || "-"}</td>
+
                 <td>${item.stk_nm || "-"} (${item.stk_cd || "-"})</td>
-                <td>${item.cur_prc ? Math.abs(item.cur_prc).toLocaleString() : "-"}</td>
+
                 <td style="color: ${parseFloat(item.flu_rt) >= 0 ? '#d63031' : '#0984e3'}">
                   ${item.flu_rt || "-"} %
                 </td>
