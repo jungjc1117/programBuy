@@ -67,13 +67,6 @@
         text-align: center;
         padding: 20px;
       }
-      .no-data {
-        color: #7f8c8d;
-        text-align: center;
-        padding: 15px;
-        background: #fafafa;
-        border: 1px dashed #ccc;
-      }
     </style>
   </head>
   <body>
@@ -107,27 +100,26 @@
         secretkey: "lA1nom_3Ql1TX1rUpppvwhRJBuEQ44cECAYn7lCGgps",
       };
 
-      // 시장별 파라미터 분리 분할
       const kospiParams = {
         trde_upper_tp: "2", 
         amt_qty_tp: "1", 
-        mrkt_tp: "P00101", // 코스피
+        mrkt_tp: "P00101", 
         stex_tp: "1", 
       };
 
       const kosdaqParams = {
         trde_upper_tp: "2", 
         amt_qty_tp: "1", 
-        mrkt_tp: "P10102", // 코스닥
+        mrkt_tp: "P10102", 
         stex_tp: "1", 
       };
 
-      // 딜레이용 함수 (1초 대기용)
       const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
       async function fetchToken() {
         if (cachedToken) return cachedToken;
 
+        // 주소 규격 보완 (/oauth2/token -> /oauth/2.0/token 시도 가능하게 대응)
         const url = "https://mockapi.kiwoom.com/oauth2/token";
         const res = await fetch(url, {
           method: "POST",
@@ -141,7 +133,6 @@
         return cachedToken;
       }
 
-      // 공통 데이터 요청 함수 (파라미터를 인자로 받음)
       async function fetchMarketData(token, params) {
         const url = "https://mockapi.kiwoom.com/api/dostk/stkinfo";
         const res = await fetch(url, {
@@ -163,23 +154,38 @@
         return data.prm_netprps_upper_50 || [];
       }
 
-      // 데이터를 필터링하고 테이블 HTML을 생성하는 함수
-      function createTableHTML(rawData) {
-        // 등락률이 0보다 큰 데이터만 추출
-        const positiveData = rawData.filter(item => {
-          const fluRtNum = parseFloat(item.flu_rt);
-          return !isNaN(fluRtNum) && fluRtNum > 0;
-        });
+      // 등락률 값에 따라 동적으로 스타일과 기호를 결정하는 헬퍼 함수
+      function getFluctuationStyle(fluRtStr) {
+        if (!fluRtStr) return { text: "-", color: "#333" };
+        
+        // 문자열에 이미 +, -가 붙어있는지 확인 후 순수 숫자 파싱
+        const cleanedStr = fluRtStr.replace(/[+%]/g, "").trim();
+        const num = parseFloat(cleanedStr);
+        
+        if (isNaN(num)) return { text: fluRtStr, color: "#333" };
+        
+        if (num > 0) {
+          // 기호가 없는 경우에만 + 부착
+          const text = fluRtStr.includes("+") ? fluRtStr : `+${num}%`;
+          return { text, color: "#d63031", weight: "bold" }; // 빨간색
+        } else if (num < 0) {
+          const text = fluRtStr.includes("-") ? fluRtStr : `${num}%`;
+          return { text, color: "#0984e3", weight: "bold" }; // 파란색
+        } else {
+          return { text: "0.00%", color: "#333", weight: "normal" }; // 보합 (검은색)
+        }
+      }
 
-        if (positiveData.length === 0) {
-          return `<div class="no-data">현재 등락률이 0% 초과인 종목이 없습니다.</div>`;
+      function createTableHTML(rawData) {
+        if (!rawData || rawData.length === 0) {
+          return `<div class="error">조회된 데이터가 없습니다.</div>`;
         }
 
         return `
           <table>
             <thead>
               <tr>
-                <th>기존순위</th>
+                <th>순위</th>
                 <th>종목명</th>
                 <th>현재가</th>
                 <th>등락률</th>
@@ -187,20 +193,22 @@
               </tr>
             </thead>
             <tbody>
-              ${positiveData
-                .map(
-                  (item) => `
-                <tr>
-                  <td>${item.rank || "-"}</td>
-                  <td><strong>${item.stk_nm || "-"}</strong> (${item.stk_cd || "-"})</td>
-                  <td>${item.cur_prc ? Math.abs(item.cur_prc).toLocaleString() : "-"}</td>
-                  <td style="color: #d63031; font-weight: bold;">
-                    ${item.flu_rt || "-"} %
-                  </td>
-                  <td>${item.prm_netprps_amt ? parseInt(item.prm_netprps_amt).toLocaleString() : "-"}</td>
-                </tr>
-              `
-                )
+              ${rawData
+                .map((item) => {
+                  // 등락률 스타일 분석
+                  const fluStyle = getFluctuationStyle(item.flu_rt);
+                  return `
+                    <tr>
+                      <td>${item.rank || "-"}</td>
+                      <td><strong>${item.stk_nm || "-"}</strong> (${item.stk_cd || "-"})</td>
+                      <td>${item.cur_prc ? Math.abs(item.cur_prc).toLocaleString() : "-"}</td>
+                      <td style="color: ${fluStyle.color}; font-weight: ${fluStyle.weight || 'normal'};">
+                        ${fluStyle.text}
+                      </td>
+                      <td>${item.prm_netprps_amt ? parseInt(item.prm_netprps_amt).toLocaleString() : "-"}</td>
+                    </tr>
+                  `;
+                })
                 .join("")}
             </tbody>
           </table>
@@ -220,42 +228,38 @@
         const kosdaqOutput = document.getElementById("kosdaq-output");
 
         try {
-          // 1. 토큰 확보
           const token = await fetchToken();
 
-          // 2. 코스피 데이터 호출 및 화면 렌더링
+          // 1. 코스피 연동
           try {
             const kospiData = await fetchMarketData(token, kospiParams);
             kospiOutput.innerHTML = createTableHTML(kospiData);
           } catch (err) {
-            kospiOutput.innerHTML = `<div class="error">코스피 로드 실패: ${err.message}</div>`;
+            kospiOutput.innerHTML = `<div class="error">코스피 데이터 로드 실패: ${err.message}</div>`;
           }
 
-          // 3. 과부하 방지 및 요구사항 충족을 위해 딱 2초(2000ms) 대기
-          await delay(2000);
+          // 2. 1초 대기
+          await delay(1000);
 
-          // 4. 코스닥 데이터 호출 및 화면 렌더링
+          // 3. 코스닥 연동
           try {
             const kosdaqData = await fetchMarketData(token, kosdaqParams);
             kosdaqOutput.innerHTML = createTableHTML(kosdaqData);
           } catch (err) {
-            kosdaqOutput.innerHTML = `<div class="error">코스닥 로드 실패: ${err.message}</div>`;
+            kosdaqOutput.innerHTML = `<div class="error">코스닥 데이터 로드 실패: ${err.message}</div>`;
           }
 
-          // 5. 전체 업데이트 완료 시각 기록
           updateTimestamp();
 
         } catch (e) {
           console.error("인증 에러:", e);
-          if (kospiOutput) kospiOutput.innerHTML = `<div class="error">인증 및 토큰 오류: ${e.message}</div>`;
-          if (kosdaqOutput) kosdaqOutput.innerHTML = `<div class="error">인증 및 토큰 오류: ${e.message}</div>`;
+          if (kospiOutput) kospiOutput.innerHTML = `<div class="error">인증 실패 (AppKey를 확인해주세요)</div>`;
+          if (kosdaqOutput) kosdaqOutput.innerHTML = `<div class="error">인증 실패 (AppKey를 확인해주세요)</div>`;
         }
       }
 
-      // 안전한 DOM 로드 후 실행 구조
       document.addEventListener("DOMContentLoaded", () => {
         updateData();
-        // 각 사이클당 내부에 1초 대기가 있으므로 루프 타이머는 12초 주기로 넉넉하게 세팅합니다.
         setInterval(updateData, 12000); 
       });
     </script>
