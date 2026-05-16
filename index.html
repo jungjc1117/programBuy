@@ -59,11 +59,13 @@
   <body>
     <div class="container">
       <h1>키움증권 프로그램 순매수 순위 (Mock API)</h1>
-      <div id="timestamp"></div>
+      <div id="timestamp">최종 업데이트: 대기 중...</div>
       <div id="output"></div>
     </div>
 
     <script>
+      let cachedToken = null; // 토큰 재사용을 위한 전역 변수
+
       const accessParams = {
         grant_type: "client_credentials",
         appkey: "-iQmyxQBQb0jmIS-JTaAbsQ1r7u3NhoMX78hMqBsobY",
@@ -78,6 +80,8 @@
       };
 
       async function fetchToken() {
+        if (cachedToken) return cachedToken;
+
         const url = "https://mockapi.kiwoom.com/oauth2/token";
         const res = await fetch(url, {
           method: "POST",
@@ -88,7 +92,9 @@
           throw new Error(`HTTP error! status: ${res.status}`);
         }
         const data = await res.json();
-        return data.token;
+        // 키움 API 특성에 맞게 토큰 필드명 매핑 (data.token 또는 data.access_token)
+        cachedToken = data.token || data.access_token;
+        return cachedToken;
       }
 
       async function fetchProgramTradeRanking(token) {
@@ -105,6 +111,7 @@
           body: JSON.stringify(chartParams),
         });
         if (!res.ok) {
+          if (res.status === 401) cachedToken = null; // 인증 유효시간 만료 처리
           throw new Error(`HTTP error! status: ${res.status}`);
         }
         const data = await res.json();
@@ -112,6 +119,9 @@
       }
 
       function renderTable(dataList) {
+        const outputDiv = document.getElementById("output");
+        if (!outputDiv) return;
+
         const table = document.createElement("table");
         table.innerHTML = `
           <thead>
@@ -128,40 +138,42 @@
               .map(
                 (item) => `
               <tr>
-                <td>${item.rank}</td>
-                <td>${item.stk_nm} (${item.stk_cd})</td>
-                <td>${item.cur_prc}</td>
-                <td>${item.flu_rt} %</td>
-                <td>${item.prm_netprps_amt}</td>
+                <td>${item.rank || "-"}</td>
+                <td>${item.stk_nm || "-"} (${item.stk_cd || "-"})</td>
+                <td>${item.cur_prc ? Math.abs(item.cur_prc).toLocaleString() : "-"}</td>
+                <td style="color: ${parseFloat(item.flu_rt) >= 0 ? '#d63031' : '#0984e3'}">
+                  ${item.flu_rt || "-"} %
+                </td>
+                <td>${item.prm_netprps_amt ? parseInt(item.prm_netprps_amt).toLocaleString() : "-"}</td>
               </tr>
             `
               )
               .join("")}
           </tbody>
         `;
-        document.getElementById("output").innerHTML = "";
-        document.getElementById("output").appendChild(table);
+        outputDiv.innerHTML = "";
+        outputDiv.appendChild(table);
       }
 
       function updateTimestamp() {
-        const now = new Date();
-        document.getElementById(
-          "timestamp"
-        ).innerText = `최종 업데이트: ${now.toLocaleTimeString()}`;
+        const timestampElement = document.getElementById("timestamp");
+        if (timestampElement) {
+          const now = new Date();
+          timestampElement.innerText = `최종 업데이트: ${now.toLocaleTimeString()}`;
+        }
       }
 
       async function updateData() {
+        const outputDiv = document.getElementById("output");
+        if (!outputDiv) return;
+
         try {
-          document.getElementById(
-            "output"
-          ).innerHTML = `<div class="loading">데이터 불러오는 중...</div>`;
+          outputDiv.innerHTML = `<div class="loading">데이터 불러오는 중...</div>`;
           const token = await fetchToken();
           const programTradeData = await fetchProgramTradeRanking(token);
 
           if (!programTradeData || programTradeData.length === 0) {
-            document.getElementById(
-              "output"
-            ).innerHTML = `<div class="error">API에서 데이터를 가져오지 못했습니다. Mock API 응답을 확인해주세요.</div>`;
+            outputDiv.innerHTML = `<div class="error">API에서 데이터를 가져오지 못했습니다. Mock API 응답을 확인해주세요.</div>`;
             return;
           }
 
@@ -169,14 +181,15 @@
           updateTimestamp();
         } catch (e) {
           console.error("Error during updateData:", e);
-          document.getElementById(
-            "output"
-          ).innerHTML = `<div class="error">데이터 로딩 중 에러가 발생했습니다: ${e.message}</div>`;
+          outputDiv.innerHTML = `<div class="error">데이터 로딩 중 에러가 발생했습니다: ${e.message}</div>`;
         }
       }
 
-      updateData();
-      setInterval(updateData, 10000); // 10초마다 업데이트
+      // DOM이 완벽히 준비된 후 데이터 호출 및 타이머를 가동합니다.
+      document.addEventListener("DOMContentLoaded", () => {
+        updateData();
+        setInterval(updateData, 10000); // 10초마다 업데이트
+      });
     </script>
   </body>
 </html>
