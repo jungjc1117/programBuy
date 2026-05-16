@@ -20,6 +20,7 @@
       h1 {
         text-align: center;
         color: #333;
+        margin-bottom: 5px;
       }
       #timestamp {
         text-align: right;
@@ -27,14 +28,24 @@
         color: #777;
         margin-bottom: 20px;
       }
+      .market-section {
+        margin-bottom: 40px;
+      }
+      .market-title {
+        font-size: 1.3em;
+        font-weight: bold;
+        color: #2c3e50;
+        border-left: 5px solid #3498db;
+        padding-left: 10px;
+        margin-bottom: 10px;
+      }
       table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 20px;
         font-size: 0.9em;
+        background: #fff;
       }
-      th,
-      td {
+      th, td {
         padding: 12px;
         text-align: left;
         border-bottom: 1px solid #ddd;
@@ -49,17 +60,42 @@
       .loading {
         text-align: center;
         color: #888;
+        padding: 20px;
       }
       .error {
         color: red;
         text-align: center;
+        padding: 20px;
+      }
+      .no-data {
+        color: #7f8c8d;
+        text-align: center;
+        padding: 15px;
+        background: #fafafa;
+        border: 1px dashed #ccc;
       }
     </style>
   </head>
   <body>
     <div class="container">
+      <h1>키움증권 프로그램 순매수 순위 (Mock API)</h1>
+      <div id="timestamp">최종 업데이트: 대기 중...</div>
+      
+      <!-- 코스피 구역 -->
+      <div class="market-section">
+        <div class="market-title">코스피 (KOSPI) 상위 종목</div>
+        <div id="kospi-output">
+          <div class="loading">데이터를 불러오는 중입니다...</div>
+        </div>
+      </div>
 
-      <div id="output"></div>
+      <!-- 코스닥 구역 -->
+      <div class="market-section">
+        <div class="market-title">코스닥 (KOSDAQ) 상위 종목</div>
+        <div id="kosdaq-output">
+          <div class="loading">데이터를 불러오는 중입니다...</div>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -67,16 +103,27 @@
 
       const accessParams = {
         grant_type: "client_credentials",
-        appkey: "-iQmyxQBQb0jmIS-JTaAbsQ1r7u3NhoMX78hMqBsobY",
-        secretkey: "y-fGxZn2OnsyvyqR9kXlTqUiwMuk6IJd6k3xeox0PTo",
+        appkey: "oJ5S3eaEUVsSaxPX7vkiOPjOI9_yvkFGm3lwAkd_fAg",
+        secretkey: "lA1nom_3Ql1TX1rUpppvwhRJBuEQ44cECAYn7lCGgps",
       };
 
-      const chartParams = {
+      // 시장별 파라미터 분리 분할
+      const kospiParams = {
         trde_upper_tp: "2", 
         amt_qty_tp: "1", 
-        mrkt_tp: "P00000", 
+        mrkt_tp: "P00101", // 코스피
         stex_tp: "1", 
       };
+
+      const kosdaqParams = {
+        trde_upper_tp: "2", 
+        amt_qty_tp: "1", 
+        mrkt_tp: "P10102", // 코스닥
+        stex_tp: "1", 
+      };
+
+      // 딜레이용 함수 (1초 대기용)
+      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
       async function fetchToken() {
         if (cachedToken) return cachedToken;
@@ -87,15 +134,15 @@
           headers: { "Content-Type": "application/json;charset=UTF-8" },
           body: JSON.stringify(accessParams),
         });
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
+        if (!res.ok) throw new Error(`토큰 발급 실패: ${res.status}`);
+        
         const data = await res.json();
         cachedToken = data.token || data.access_token;
         return cachedToken;
       }
 
-      async function fetchProgramTradeRanking(token) {
+      // 공통 데이터 요청 함수 (파라미터를 인자로 받음)
+      async function fetchMarketData(token, params) {
         const url = "https://mockapi.kiwoom.com/api/dostk/stkinfo";
         const res = await fetch(url, {
           method: "POST",
@@ -106,51 +153,58 @@
             "cont-yn": "N",
             "next-key": "",
           },
-          body: JSON.stringify(chartParams),
+          body: JSON.stringify(params),
         });
         if (!res.ok) {
           if (res.status === 401) cachedToken = null; 
-          throw new Error(`HTTP error! status: ${res.status}`);
+          throw new Error(`데이터 로드 실패: ${res.status}`);
         }
         const data = await res.json();
         return data.prm_netprps_upper_50 || [];
       }
 
-      function renderTable(dataList) {
-        const outputDiv = document.getElementById("output");
-        if (!outputDiv) return;
+      // 데이터를 필터링하고 테이블 HTML을 생성하는 함수
+      function createTableHTML(rawData) {
+        // 등락률이 0보다 큰 데이터만 추출
+        const positiveData = rawData.filter(item => {
+          const fluRtNum = parseFloat(item.flu_rt);
+          return !isNaN(fluRtNum) && fluRtNum > 0;
+        });
 
-        const table = document.createElement("table");
-        table.innerHTML = `
-          <thead>
-            <tr>
+        if (positiveData.length === 0) {
+          return `<div class="no-data">현재 등락률이 0% 초과인 종목이 없습니다.</div>`;
+        }
 
-              <th>종목명</th>
-
-              <th>등락률</th>
-              <th>순매수 금액</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${dataList
-              .map(
-                (item) => `
+        return `
+          <table>
+            <thead>
               <tr>
-
-                <td><strong>${item.stk_nm || "-"}</strong></td>
-
-                <td style="color: #d63031; font-weight: bold;">
-                  ${item.flu_rt || "-"} %
-                </td>
-                <td>${item.prm_netprps_amt ? parseInt(item.prm_netprps_amt).toLocaleString() : "-"}</td>
+                <th>기존순위</th>
+                <th>종목명</th>
+                <th>현재가</th>
+                <th>등락률</th>
+                <th>순매수 금액</th>
               </tr>
-            `
-              )
-              .join("")}
-          </tbody>
+            </thead>
+            <tbody>
+              ${positiveData
+                .map(
+                  (item) => `
+                <tr>
+                  <td>${item.rank || "-"}</td>
+                  <td><strong>${item.stk_nm || "-"}</strong> (${item.stk_cd || "-"})</td>
+                  <td>${item.cur_prc ? Math.abs(item.cur_prc).toLocaleString() : "-"}</td>
+                  <td style="color: #d63031; font-weight: bold;">
+                    ${item.flu_rt || "-"} %
+                  </td>
+                  <td>${item.prm_netprps_amt ? parseInt(item.prm_netprps_amt).toLocaleString() : "-"}</td>
+                </tr>
+              `
+                )
+                .join("")}
+            </tbody>
+          </table>
         `;
-        outputDiv.innerHTML = "";
-        outputDiv.appendChild(table);
       }
 
       function updateTimestamp() {
@@ -162,42 +216,47 @@
       }
 
       async function updateData() {
-        const outputDiv = document.getElementById("output");
-        if (!outputDiv) return;
+        const kospiOutput = document.getElementById("kospi-output");
+        const kosdaqOutput = document.getElementById("kosdaq-output");
 
         try {
-          outputDiv.innerHTML = `<div class="loading">데이터 불러오는 중...</div>`;
+          // 1. 토큰 확보
           const token = await fetchToken();
-          const programTradeData = await fetchProgramTradeRanking(token);
 
-          if (!programTradeData || programTradeData.length === 0) {
-            outputDiv.innerHTML = `<div class="error">API에서 데이터를 가져오지 못했습니다.</div>`;
-            return;
+          // 2. 코스피 데이터 호출 및 화면 렌더링
+          try {
+            const kospiData = await fetchMarketData(token, kospiParams);
+            kospiOutput.innerHTML = createTableHTML(kospiData);
+          } catch (err) {
+            kospiOutput.innerHTML = `<div class="error">코스피 로드 실패: ${err.message}</div>`;
           }
 
-          // ★ [핵심 변경] 등락률(flu_rt)이 0보다 큰 데이터만 필터링
-          const positiveData = programTradeData.filter(item => {
-            const fluRtNum = parseFloat(item.flu_rt);
-            return !isNaN(fluRtNum) && fluRtNum > 0;
-          });
+          // 3. 과부하 방지 및 요구사항 충족을 위해 딱 1초(1000ms) 대기
+          await delay(1000);
 
-          if (positiveData.length === 0) {
-            outputDiv.innerHTML = `<div class="loading">현재 등락률이 0% 초과인 종목이 없습니다.</div>`;
-            updateTimestamp();
-            return;
+          // 4. 코스닥 데이터 호출 및 화면 렌더링
+          try {
+            const kosdaqData = await fetchMarketData(token, kosdaqParams);
+            kosdaqOutput.innerHTML = createTableHTML(kosdaqData);
+          } catch (err) {
+            kosdaqOutput.innerHTML = `<div class="error">코스닥 로드 실패: ${err.message}</div>`;
           }
 
-          renderTable(positiveData);
+          // 5. 전체 업데이트 완료 시각 기록
           updateTimestamp();
+
         } catch (e) {
-          console.error("Error during updateData:", e);
-          outputDiv.innerHTML = `<div class="error">데이터 로딩 중 에러가 발생했습니다: ${e.message}</div>`;
+          console.error("인증 에러:", e);
+          if (kospiOutput) kospiOutput.innerHTML = `<div class="error">인증 및 토큰 오류: ${e.message}</div>`;
+          if (kosdaqOutput) kosdaqOutput.innerHTML = `<div class="error">인증 및 토큰 오류: ${e.message}</div>`;
         }
       }
 
+      // 안전한 DOM 로드 후 실행 구조
       document.addEventListener("DOMContentLoaded", () => {
         updateData();
-        setInterval(updateData, 10000); 
+        // 각 사이클당 내부에 1초 대기가 있으므로 루프 타이머는 12초 주기로 넉넉하게 세팅합니다.
+        setInterval(updateData, 12000); 
       });
     </script>
   </body>
