@@ -231,8 +231,8 @@
             kospiOutput.innerHTML = `<div class="error">코스피 로드 실패: ${err.message}</div>`;
           }
 
-          // 3. 과부하 방지 및 요구사항 충족을 위해 딱 1초(1000ms) 대기
-          await delay(1000);
+          // 3. 과부하 방지 및 요구사항 충족을 위해 딱 2초(2000ms) 대기
+          await delay(2000);
 
           // 4. 코스닥 데이터 호출 및 화면 렌더링
           try {
