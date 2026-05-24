@@ -399,12 +399,14 @@
 
         const avg3 = sortedData.slice(0, 3).reduce((acc, d) => acc + d.close, 0) / Math.min(sortedData.length, 3);
         const avg5 = sortedData.slice(0, 5).reduce((acc, d) => acc + d.close, 0) / Math.min(sortedData.length, 5);
+        const avg20 = sortedData.slice(0, 20).reduce((acc, d) => acc + d.close, 0) / Math.min(sortedData.length, 20);
         const avgAll = sortedData.reduce((acc, d) => acc + d.close, 0) / sortedData.length;
         const max60 = Math.max(...sortedData.slice(0, 60).map(d => d.high));
 
         let dashboardItems = [
           { name: "3일 평균", price: avg3, rate: ((avg3 - curPrc) / curPrc) * 100, isCurrent: false },
           { name: "5일 평균", price: avg5, rate: ((avg5 - curPrc) / curPrc) * 100, isCurrent: false },
+          { name: "20일 평균", price: avg20, rate: ((avg20 - curPrc) / curPrc) * 100, isCurrent: false },
           { name: "60일 고가", price: max60, rate: ((max60 - curPrc) / curPrc) * 100, isCurrent: false },
           { name: "현재가격", price: curPrc, rate: ((curPrc - prevClose) / prevClose) * 100, isCurrent: true }, 
           { name: "전일종가", price: prevClose, rate: ((prevClose - curPrc) / curPrc) * 100, isCurrent: false },
