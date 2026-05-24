@@ -1,0 +1,618 @@
+<!--차트투자자가격비교프로그램-->>
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Kiwoom 프로그램 순매수 순위 및 종목 분석 대시보드</title>
+    <style>
+      /* [글자 크기 조절 옵션] 여기 px 수치를 바꾸면 전체 글씨 크기가 조절됩니다 */
+      :root {
+        --base-font-size: 13px; 
+      }
+
+      body {
+        font-family: Arial, sans-serif;
+        padding: 8px;
+        background-color: #f4f4f4;
+        margin: 0;
+        font-size: var(--base-font-size);
+      }
+      .container {
+        width: 100%;
+        max-width: 1000px;
+        box-sizing: border-box;
+        margin: 0 auto 12px auto;
+        background: white;
+        padding: 12px;
+        border-radius: 6px;
+        box-shadow: 0 0 8px rgba(0, 0, 0, 0.05);
+      }
+      h1 {
+        text-align: center;
+        color: #333;
+        font-size: 1.4em;
+        margin: 5px 0 15px 0;
+      }
+      
+      /* 코스피, 코스닥 좌우 배치를 위한 플렉스 박스 설정 */
+      .market-flex-container {
+        display: flex;
+        gap: 12px;
+        width: 100%;
+      }
+      .market-section {
+        flex: 1;
+        min-width: 0; /* flex 자식 요소의 말줄임 및 크기 깨짐 방지 */
+        margin-bottom: 10px;
+      }
+
+      .market-title {
+        font-size: 1.05em;
+        font-weight: bold;
+        color: #2c3e50;
+        border-left: 4px solid #3498db;
+        padding-left: 8px;
+        margin-bottom: 8px;
+      }
+      .chart-wrapper {
+        width: 100%;
+        height: 150px;
+        background: #fafafa;
+        border: 1px solid #e8e8e8;
+        border-radius: 4px;
+        position: relative;
+        margin-bottom: 12px;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .table-wrapper {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 1em;
+        background: #fff;
+        table-layout: fixed;
+      }
+      
+      /* [요구사항] th, td 패딩 최소화 적용 */
+      th, td {
+        padding: 4px 2px;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+        word-break: break-all;
+        font-size: 0.95em;
+      }
+      
+      /* 프로그램 매수 순위 리스트 테이블 스타일 */
+      .rank-table th:nth-child(1), .rank-table td:nth-child(1) { width: 65%; padding-left: 6px; }
+      .rank-table th:nth-child(2), .rank-table td:nth-child(2) { width: 35%; text-align: center; }
+      .rank-table tbody tr { cursor: pointer; transition: background-color 0.15s; }
+      .rank-table tbody tr:hover { background-color: #f1f3f5; }
+      .rank-table tbody tr.selected-row { background-color: #e8f4fd !important; }
+
+      /* 8대 가격 지표 대시보드 테이블 스타일 */
+      .dashboard-table th:nth-child(1), .dashboard-table td:nth-child(1) { width: 50%; padding-left: 6px; }
+      .dashboard-table th:nth-child(2), .dashboard-table td:nth-child(2) { width: 25%; text-align: right; }
+      .dashboard-table th:nth-child(3), .dashboard-table td:nth-child(3) { width: 25%; text-align: right; padding-right: 6px; }
+      .dashboard-table tr.highlight-row { background-color: #fff5f5; }
+      .rate-cell { text-align: right; font-weight: bold; }
+      
+      th {
+        background-color: #f8f9fa;
+        color: #555;
+        font-size: 0.9em;
+        border-bottom: 2px solid #dee2e6;
+      }
+      .loading {
+        text-align: center;
+        color: #888;
+        padding: 15px;
+        font-size: 0.9em;
+      }
+      .chart-loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #888;
+        font-size: 0.9em;
+      }
+      .error {
+        color: #d63031;
+        text-align: center;
+        padding: 15px;
+        font-size: 0.9em;
+      }
+      .no-data {
+        color: #7f8c8d;
+        text-align: center;
+        padding: 12px;
+        background: #fafafa;
+        border: 1px dashed #ccc;
+        font-size: 0.9em;
+      }
+
+      /* 모바일 반응형: 화면이 좁아지면 좌우 배치를 상하 배치로 전환 */
+      @media (max-width: 600px) {
+        .market-flex-container {
+          flex-direction: column;
+          gap: 15px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+
+    <!-- 상단: 분석 결과 영역 (선택된 종목의 차트 및 8대 대시보드 출력) -->
+    <div class="container">
+      <div class="market-title" id="analysis-title">종목 분석 대시보드 (선택된 종목 없음)</div>
+      
+      <!-- 일봉 차트 구역 -->
+      <div class="chart-wrapper">
+        <canvas id="stock-chart" width="800" height="300"></canvas>
+        <div id="stock-msg" class="chart-loading">순위를 클릭하면 차트가 로드됩니다.</div>
+      </div>
+
+      <!-- 8대 가격 지표 대시보드 구역 -->
+      <div class="table-wrapper">
+        <table class="dashboard-table">
+          <thead>
+            <tr>
+              <th>비교 지표 항목</th>
+              <th style="text-align: right;">해당 가격</th>
+              <th style="text-align: right; padding-right: 6px;">대비 등락률</th>
+            </tr>
+          </thead>
+          <tbody id="dashboard-tbody">
+            <tr>
+              <td colspan="3" style="text-align: center; color: #999; padding: 15px;">하단 리스트에서 종목을 선택해 주세요.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 하단: 프로그램 매수 현황 및 시장 종합 리스트 (좌우 배치 변경 구역) -->
+    <div class="container">
+
+      <div class="market-flex-container">
+        <!-- 코스피 출력 구역 -->
+        <div class="market-section">
+          <div class="market-title" id="kospi-title">코스피 시장</div>
+          <div id="kospi-output">
+            <div class="loading">데이터를 불러오는 중입니다...</div>
+          </div>
+        </div>
+
+        <!-- 코스닥 출력 구역 -->
+        <div class="market-section">
+          <div class="market-title" id="kosdaq-title">코스닥 시장</div>
+          <div id="kosdaq-output">
+            <div class="loading">데이터를 불러오는 중입니다...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let cachedToken = null;
+
+      const accessParams = {
+        grant_type: "client_credentials",
+        appkey: "-iQmyxQBQb0jmIS-JTaAbsQ1r7u3NhoMX78hMqBsobY",
+        secretkey: "y-fGxZn2OnsyvyqR9kXlTqUiwMuk6IJd6k3xeox0PTo",
+      };
+
+      const programParamsKospi = { trde_upper_tp: "2", amt_qty_tp: "1", mrkt_tp: "P00101", stex_tp: "3" };
+      const programParamsKosdaq = { trde_upper_tp: "2", amt_qty_tp: "1", mrkt_tp: "P10102", stex_tp: "3" };
+
+      const investParamsKospi = { mrkt_tp: "0", amt_qty_tp: "0", base_dt: "20260524", stex_tp: "3" };
+      const investParamsKosdaq = { mrkt_tp: "1", amt_qty_tp: "0", base_dt: "20260524", stex_tp: "3" };
+
+      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+      async function fetchToken() {
+        if (cachedToken) return cachedToken;
+        const url = "https://mockapi.kiwoom.com/oauth2/token";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json;charset=UTF-8" },
+          body: JSON.stringify(accessParams),
+        });
+        if (!res.ok) throw new Error(`토큰 발급 에러: ${res.status}`);
+        const data = await res.json();
+        cachedToken = data.token || data.access_token;
+        return cachedToken;
+      }
+
+      async function fetchProgramData(token, params) {
+        const url = "https://mockapi.kiwoom.com/api/dostk/stkinfo";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka90003",
+            "cont-yn": "N",
+            "next-key": "",
+          },
+          body: JSON.stringify(params),
+        });
+        if (!res.ok) {
+          if (res.status === 401) cachedToken = null; 
+          throw new Error(`데이터 통신 에러 (프로그램): ${res.status}`);
+        }
+        const data = await res.json();
+        return data.prm_netprps_upper_50 || [];
+      }
+
+      async function fetchInvestorData(token, params) {
+        const url = "https://mockapi.kiwoom.com/api/dostk/sect";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka10051",
+            "cont-yn": "N",
+            "next-key": "",
+          },
+          body: JSON.stringify(params),
+        });
+        if (!res.ok) {
+          if (res.status === 401) cachedToken = null; 
+          throw new Error(`데이터 통신 에러 (투자자): ${res.status}`);
+        }
+        const data = await res.json();
+        return data.inds_netprps || [];
+      }
+
+      async function fetchMarketData(token, params) {
+        const url = "https://mockapi.kiwoom.com/api/dostk/chart";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka10081",
+            "cont-yn": "N",
+            "next-key": "",
+          },
+          body: JSON.stringify(params),
+        });
+        if (!res.ok) {
+          if (res.status === 401) cachedToken = null; 
+          throw new Error(`데이터 통신 에러: ${res.status}`);
+        }
+        const data = await res.json();
+        return data.stk_dt_pole_chart_qry || [];
+      }
+
+      function parsePrice(value) {
+        if (!value) return 0;
+        let cleanValue = String(value).replace(/[^0-9.-]/g, '');
+        return Math.abs(parseFloat(cleanValue)) || 0;
+      }
+
+      function drawCandleChart(canvas, rawData) {
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        ctx.clearRect(0, 0, width, height);
+
+        if (!rawData || rawData.length === 0) return;
+
+        let parsedData = rawData.map(item => ({
+          date: item.dt || "",
+          open: parsePrice(item.open_pric),
+          high: parsePrice(item.high_pric),
+          low: parsePrice(item.low_pric),
+          close: parsePrice(item.cur_prc)
+        })).filter(d => d.date !== "");
+
+        let chartData = parsedData.slice(0, 60);
+        chartData.sort((a, b) => a.date.localeCompare(b.date));
+
+        const paddingY = 10;
+        const paddingX = 10;
+
+        const highs = chartData.map(d => d.high);
+        const lows = chartData.map(d => d.low);
+        const maxPrice = Math.max(...highs);
+        const minPrice = Math.min(...lows);
+        const priceRange = maxPrice - minPrice || 1;
+
+        const dataCount = chartData.length;
+        const availableWidth = width - (paddingX * 2);
+        const xStep = dataCount > 1 ? availableWidth / (dataCount - 1) : availableWidth;
+        const candleWidth = Math.max(2, (availableWidth / dataCount) * 0.65);
+
+        function getCanvasY(price) {
+          const usableHeight = height - (paddingY * 2);
+          return height - paddingY - ((price - minPrice) / priceRange) * usableHeight;
+        }
+
+        chartData.forEach((candle, index) => {
+          const x = paddingX + (index * xStep);
+          const yOpen = getCanvasY(candle.open);
+          const yClose = getCanvasY(candle.close);
+          const yHigh = getCanvasY(candle.high);
+          const yLow = getCanvasY(candle.low);
+
+          let themeColor = '#7f8c8d';
+          if (candle.close > candle.open) themeColor = '#e17055'; 
+          else if (candle.close < candle.open) themeColor = '#0984e3'; 
+
+          ctx.strokeStyle = themeColor;
+          ctx.fillStyle = themeColor;
+          ctx.lineWidth = 1.2;
+
+          ctx.beginPath();
+          ctx.moveTo(x, yHigh);
+          ctx.lineTo(x, yLow);
+          ctx.stroke();
+
+          const bodyHeight = Math.abs(yClose - yOpen);
+          const bodyX = x - (candleWidth / 2);
+          const bodyY = Math.min(yOpen, yClose);
+
+          if (bodyHeight === 0) {
+            ctx.beginPath();
+            ctx.moveTo(x - (candleWidth / 2), bodyY);
+            ctx.lineTo(x + (candleWidth / 2), bodyY);
+            ctx.stroke();
+          } else {
+            ctx.fillRect(bodyX, bodyY, candleWidth, bodyHeight);
+          }
+        });
+      }
+
+      function makePriceDashboard(rawData) {
+        const tbody = document.getElementById("dashboard-tbody");
+        if (!rawData || rawData.length < 2) {
+          tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: red;">정상적인 데이터 연산이 불가능합니다.</td></tr>`;
+          return;
+        }
+
+        let sortedData = rawData.map(item => ({
+          open: parsePrice(item.open_pric),
+          high: parsePrice(item.high_pric),
+          low: parsePrice(item.low_pric),
+          close: parsePrice(item.cur_prc)
+        }));
+        
+        const today = sortedData[0];
+        const yesterday = sortedData[1];
+
+        const curPrc = today.close;       
+        const prevClose = yesterday.close; 
+        const prevHigh = yesterday.high;   
+        const todayHigh = today.high;     
+
+        const avg3 = sortedData.slice(0, 3).reduce((acc, d) => acc + d.close, 0) / Math.min(sortedData.length, 3);
+        const avg5 = sortedData.slice(0, 5).reduce((acc, d) => acc + d.close, 0) / Math.min(sortedData.length, 5);
+        const avgAll = sortedData.reduce((acc, d) => acc + d.close, 0) / sortedData.length;
+        const max60 = Math.max(...sortedData.slice(0, 60).map(d => d.high));
+
+        let dashboardItems = [
+          { name: "3일 평균", price: avg3, rate: ((avg3 - curPrc) / curPrc) * 100, isCurrent: false },
+          { name: "5일 평균", price: avg5, rate: ((avg5 - curPrc) / curPrc) * 100, isCurrent: false },
+          { name: "60일 고가", price: max60, rate: ((max60 - curPrc) / curPrc) * 100, isCurrent: false },
+          { name: "현재가격", price: curPrc, rate: ((curPrc - prevClose) / prevClose) * 100, isCurrent: true }, 
+          { name: "전일종가", price: prevClose, rate: ((prevClose - curPrc) / curPrc) * 100, isCurrent: false },
+          { name: "전일고가", price: prevHigh, rate: ((prevHigh - curPrc) / curPrc) * 100, isCurrent: false },
+          { name: "당일고가", price: todayHigh, rate: ((todayHigh - curPrc) / curPrc) * 100, isCurrent: false }
+        ];
+
+        dashboardItems.sort((a, b) => b.price - a.price);
+
+        tbody.innerHTML = dashboardItems.map(item => {
+          const sign = item.rate > 0 ? "+" : "";
+          const displayRate = `${sign}${item.rate.toFixed(2)}%`;
+          const displayPrice = Math.round(item.price).toLocaleString();
+          
+          const rowClass = item.isCurrent ? "class='highlight-row'" : "";
+          const customStyle = item.isCurrent ? "style='color: #d63031; font-weight: bold;'" : "";
+
+          return `
+            <tr ${rowClass} ${customStyle}>
+              <td>${item.name}</td>
+              <td style="text-align: right;">${displayPrice}</td>
+              <td class="rate-cell">${displayRate}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      async function loadStockAnalysis(stkCd, stkNm) {
+        const msgEl = document.getElementById("stock-msg");
+        const titleEl = document.getElementById("analysis-title");
+        const canvas = document.getElementById("stock-chart");
+        
+        msgEl.style.display = "block";
+        msgEl.className = "chart-loading";
+        msgEl.innerText = `[${stkNm}] 분석 데이터를 가져오는 중...`;
+        titleEl.innerText = `${stkNm} (${stkCd})`;
+
+        try {
+          const token = await fetchToken();
+          const targetParams = { stk_cd: stkCd, base_dt: '20261231', upd_stkpc_tp: '0' };
+          const stockData = await fetchMarketData(token, targetParams);
+          
+          msgEl.style.display = "none";
+          drawCandleChart(canvas, stockData);
+          makePriceDashboard(stockData);
+        } catch (err) {
+          msgEl.className = "error";
+          msgEl.innerText = "데이터 로드 실패";
+          console.error(err);
+        }
+      }
+
+      function createTableHTML(rawData) {
+        if (!rawData || rawData.length === 0) {
+          return `<div class="error">조회된 데이터가 없습니다.</div>`;
+        }
+
+        const positiveData = rawData.filter(item => {
+          if (!item.flu_rt) return false;
+          return String(item.flu_rt).trim().includes("+");
+        });
+
+        if (positiveData.length === 0) {
+          return `<div class="no-data">상승 종목이 없습니다.</div>`;
+        }
+
+        return `
+          <div class="table-wrapper">
+            <table class="rank-table">
+              <thead>
+                <tr>
+                  <th>종목명</th>
+                  <th style="text-align: center;">등락률</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${positiveData
+                  .map((item) => {
+                    let displayFluRt = String(item.flu_rt).trim();
+                    if (!displayFluRt.includes("%")) displayFluRt += "%";
+
+                    return `
+                      <tr data-code="${item.stk_cd || ''}" data-name="${item.stk_nm || ''}">
+                        <td><strong>${item.stk_nm || "-"}</strong></td>
+                        <td style="color: #d63031; font-weight: bold; text-align: center;">${displayFluRt}</td>
+                      </tr>
+                    `;
+                  })
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      function updateMarketTitle(elementId, marketName, investorData) {
+        const titleEl = document.getElementById(elementId);
+        if (!titleEl) return;
+
+        const target = investorData.find(item => item.inds_cd === "001_AL" || item.inds_cd === "101_AL");
+        if (!target) {
+          titleEl.innerText = `${marketName} (시장 정보 없음)`;
+          return;
+        }
+
+        const frgnr = Number(target.frgnr_netprps) || 0;
+        const orgn = Number(target.orgn_netprps) || 0;
+        const frgnrColor = frgnr >= 0 ? '#d32f2f' : '#1565c0';
+        const orgnColor = orgn >= 0 ? '#d32f2f' : '#1565c0';
+
+        titleEl.innerHTML = `
+          ${marketName} 
+           <span style="color: ${frgnrColor}">외 ${frgnr > 0 ? '+' : ''}${Math.round(frgnr).toLocaleString()}</span> | 
+           <span style="color: ${orgnColor}">기 ${orgn > 0 ? '+' : ''}${Math.round(orgn).toLocaleString()}</span>
+        `;
+      }
+
+      async function initApplication() {
+        const kospiOutput = document.getElementById("kospi-output");
+        const kosdaqOutput = document.getElementById("kosdaq-output");
+        let initialStock = null;
+
+        try {
+          const token = await fetchToken();
+          await delay(600); 
+
+          // 코스피 프로그램 순매수 조회
+          try {
+            const kospiProgData = await fetchProgramData(token, programParamsKospi);
+            kospiOutput.innerHTML = createTableHTML(kospiProgData);
+
+            if (kospiProgData.length > 0 && !initialStock) {
+              initialStock = { code: kospiProgData[0].stk_cd, name: kospiProgData[0].stk_nm };
+            }
+          } catch (err) {
+            kospiOutput.innerHTML = `<div class="error">코스피 데이터 실패: ${err.message}</div>`;
+          }
+
+          await delay(600); 
+
+          // 코스피 투자자별 종합 조회
+          try {
+            const kospiInvestData = await fetchInvestorData(token, investParamsKospi);
+            updateMarketTitle("kospi-title", "코스피 | ", kospiInvestData);
+          } catch (err) {
+            console.error("코스피 투자자 조회 실패:", err);
+          }
+
+          await delay(800); 
+
+          // 코스닥 프로그램 순매수 조회
+          try {
+            const kosdaqProgData = await fetchProgramData(token, programParamsKosdaq);
+            kosdaqOutput.innerHTML = createTableHTML(kosdaqProgData);
+
+            if (kosdaqProgData.length > 0 && !initialStock) {
+              initialStock = { code: kosdaqProgData[0].stk_cd, name: kosdaqProgData[0].stk_nm };
+            }
+          } catch (err) {
+            kosdaqOutput.innerHTML = `<div class="error">코스닥 데이터 실패: ${err.message}</div>`;
+          }
+
+          await delay(600); 
+
+          // 코스닥 투자자별 종합 조회
+          try {
+            const kosdaqInvestData = await fetchInvestorData(token, investParamsKosdaq);
+            updateMarketTitle("kosdaq-title", "코스닥 | ", kosdaqInvestData);
+          } catch (err) {
+            console.error("코스닥 투자자 조회 실패:", err);
+          }
+
+          await delay(600); 
+
+          if (initialStock && initialStock.code) {
+            loadStockAnalysis(initialStock.code, initialStock.name);
+            
+            setTimeout(() => {
+              const firstRow = document.querySelector(`tr[data-code="${initialStock.code}"]`);
+              if (firstRow) firstRow.classList.add("selected-row");
+            }, 300);
+          }
+
+        } catch (e) {
+          console.error("인증 에러:", e);
+          if (kospiOutput) kospiOutput.innerHTML = `<div class="error">인증 오류 혹은 서버 통신 불가</div>`;
+        }
+      }
+
+      document.addEventListener("click", function (e) {
+        const row = e.target.closest("tr[data-code]");
+        if (!row) return;
+
+        const code = row.getAttribute("data-code");
+        const name = row.getAttribute("data-name");
+
+        if (code) {
+          document.querySelectorAll(".rank-table tbody tr").forEach(tr => {
+            tr.classList.remove("selected-row");
+          });
+          row.classList.add("selected-row");
+          loadStockAnalysis(code, name);
+        }
+      });
+
+      document.addEventListener("DOMContentLoaded", () => {
+        initApplication();
+      });
+    </script>
+  </body>
+</html>

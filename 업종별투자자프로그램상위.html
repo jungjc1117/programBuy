@@ -1,0 +1,330 @@
+<!--업종별투자자프로그램상위-->>
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Kiwoom 프로그램 순매수 순위 조회</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 10px;
+        background-color: #f4f4f4;
+        margin: 0;
+      }
+      .container {
+        width: 100%;
+        max-width: 900px;
+        box-sizing: border-box;
+        margin: auto;
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        text-align: center;
+        color: #333;
+        font-size: 1.5em;
+        margin-bottom: 5px;
+      }
+      #timestamp {
+        text-align: right;
+        font-size: 0.85em;
+        color: #777;
+        margin-bottom: 15px;
+      }
+      .market-section {
+        margin-bottom: 30px;
+      }
+      .market-title {
+        font-size: 1.1em;
+        font-weight: bold;
+        color: #2c3e50;
+        border-left: 5px solid #3498db;
+        padding-left: 10px;
+        margin-bottom: 10px;
+      }
+      .table-wrapper {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 1em;
+        background: #fff;
+        table-layout: fixed;
+      }
+      th, td {
+        padding: 10px 4px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+        word-break: break-all;
+      }
+      th:nth-child(1), td:nth-child(1) { width: 45%; }
+      th:nth-child(2), td:nth-child(2) { width: 25%; text-align: center; }
+      
+      th {
+        background-color: #f2f2f2;
+        color: #555;
+        font-size: 0.9em;
+      }
+      tr:hover {
+        background-color: #f9f9f9;
+      }
+      .loading {
+        text-align: center;
+        color: #888;
+        padding: 20px;
+      }
+      .error {
+        color: #d63031;
+        text-align: center;
+        padding: 20px;
+        font-size: 0.9em;
+      }
+      .no-data {
+        color: #7f8c8d;
+        text-align: center;
+        padding: 15px;
+        background: #fafafa;
+        border: 1px dashed #ccc;
+        font-size: 0.9em;
+      }
+      @media (max-width: 480px) {
+        body { padding: 5px; }
+        .container { padding: 10px; }
+        h1 { font-size: 1.2em; }
+        table { font-size: 0.85em; }
+        th, td { padding: 8px 3px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1 id="page-title">프로그램 순매수 순위</h1>
+      <div id="timestamp">최종 업데이트: -</div>
+
+      <!-- 코스피 출력 구역 -->
+      <div class="market-section">
+        <div class="market-title" id="kospi-title">코스피 시장</div>
+        <div id="kospi-output">
+          <div class="loading">데이터를 불러오는 중입니다...</div>
+        </div>
+      </div>
+
+      <!-- 코스닥 출력 구역 -->
+      <div class="market-section">
+        <div class="market-title" id="kosdaq-title">코스닥 시장</div>
+        <div id="kosdaq-output">
+          <div class="loading">데이터를 불러오는 중입니다...</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let cachedToken = null;
+
+      const accessParams = {
+        grant_type: "client_credentials",
+        appkey: "-iQmyxQBQb0jmIS-JTaAbsQ1r7u3NhoMX78hMqBsobY",
+        secretkey: "y-fGxZn2OnsyvyqR9kXlTqUiwMuk6IJd6k3xeox0PTo",
+      };
+
+      // 1. 프로그램 매수 파라미터
+      const programParamsKospi = { trde_upper_tp: "2", amt_qty_tp: "1", mrkt_tp: "P00101", stex_tp: "3" };
+      const programParamsKosdaq = { trde_upper_tp: "2", amt_qty_tp: "1", mrkt_tp: "P10102", stex_tp: "3" };
+
+      // 2. 투자자별 순매수 파라미터 (2026년 날짜 반영)
+      const investParamsKospi = { mrkt_tp: "0", amt_qty_tp: "0", base_dt: "20260524", stex_tp: "3" };
+      const investParamsKosdaq = { mrkt_tp: "1", amt_qty_tp: "0", base_dt: "20260524", stex_tp: "3" };
+
+      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+      // 토큰 발급
+      async function fetchToken() {
+        if (cachedToken) return cachedToken;
+        const url = "https://mockapi.kiwoom.com/oauth2/token";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json;charset=UTF-8" },
+          body: JSON.stringify(accessParams),
+        });
+        if (!res.ok) throw new Error(`토큰 발급 에러: ${res.status}`);
+        const data = await res.json();
+        cachedToken = data.token || data.access_token;
+        return cachedToken;
+      }
+
+      // 프로그램 순매수 데이터 조회 (ka90003)
+      async function fetchProgramData(token, params) {
+        const url = "https://mockapi.kiwoom.com/api/dostk/stkinfo";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka90003",
+            "cont-yn": "N",
+            "next-key": "",
+          },
+          body: JSON.stringify(params),
+        });
+        if (!res.ok) {
+          if (res.status === 401) cachedToken = null; 
+          throw new Error(`데이터 통신 에러 (프로그램): ${res.status}`);
+        }
+        const data = await res.json();
+        return data.prm_netprps_upper_50 || [];
+      }
+
+      // 투자자별 종합 조회 (ka10051)
+      async function fetchInvestorData(token, params) {
+        const url = "https://mockapi.kiwoom.com/api/dostk/sect";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka10051",
+            "cont-yn": "N",
+            "next-key": "",
+          },
+          body: JSON.stringify(params),
+        });
+        if (!res.ok) {
+          if (res.status === 401) cachedToken = null; 
+          throw new Error(`데이터 통신 에러 (투자자): ${res.status}`);
+        }
+        const data = await res.json();
+        return data.inds_netprps || [];
+      }
+
+      // 타이틀 업데이트 함수 (외국인 / 기관 매수세 렌더링)
+      function updateMarketTitle(elementId, marketName, investorData) {
+        const titleEl = document.getElementById(elementId);
+        if (!titleEl) return;
+
+        // 전체(AL) 데이터 매칭 ("001_AL" 또는 "101_AL")
+        const target = investorData.find(item => item.inds_cd === "001_AL" || item.inds_cd === "101_AL");
+        if (!target) {
+          titleEl.innerText = `${marketName} (시장 정보 없음)`;
+          return;
+        }
+
+        const frgnr = Number(target.frgnr_netprps) || 0;
+        const orgn = Number(target.orgn_netprps) || 0;
+
+        const frgnrColor = frgnr >= 0 ? '#d32f2f' : '#1565c0';
+        const orgnColor = orgn >= 0 ? '#d32f2f' : '#1565c0';
+
+        titleEl.innerHTML = `
+          ${marketName} 
+           <span style="color: ${frgnrColor}">외국인 ${frgnr > 0 ? '+' : ''}${frgnr.toLocaleString()}</span> | 
+           <span style="color: ${orgnColor}"> 기관 ${orgn > 0 ? '+' : ''}${orgn.toLocaleString()}</span>
+        `;
+      }
+
+      // 테이블 HTML 생성
+      function createTableHTML(rawData) {
+        if (!rawData || rawData.length === 0) {
+          return `<div class="error">조회된 데이터가 없습니다.</div>`;
+        }
+
+        // 등락률에 '+' 기호가 붙은 상승 종목만 필터링
+        const positiveData = rawData.filter(item => {
+          if (!item.flu_rt) return false;
+          return String(item.flu_rt).trim().includes("+");
+        });
+
+        if (positiveData.length === 0) {
+          return `<div class="no-data">현재 등락률이 + 인 상승 종목이 없습니다.</div>`;
+        }
+
+        return `
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>종목명</th>
+                  <th style="text-align: center;">등락률</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${positiveData
+                  .map((item) => {
+                    let displayFluRt = String(item.flu_rt).trim();
+                    if (!displayFluRt.includes("%")) displayFluRt += "%";
+
+                    return `
+                      <tr>
+                        <td><strong>${item.stk_nm || "-"}</strong></td>
+                        <td style="color: #d63031; font-weight: bold; text-align: center;">${displayFluRt}</td>
+                      </tr>
+                    `;
+                  })
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      function updateTimestamp() {
+        const timestampElement = document.getElementById("timestamp");
+        if (timestampElement) {
+          const now = new Date();
+          timestampElement.innerText = `최종 업데이트: ${now.toLocaleTimeString()}`;
+        }
+      }
+
+      // 메인 데이터 업데이트 실행 플로우
+      async function updateData() {
+        const kospiOutput = document.getElementById("kospi-output");
+        const kosdaqOutput = document.getElementById("kosdaq-output");
+
+        try {
+          const token = await fetchToken();
+
+          // 1. 코스피 연동 (프로그램 순매수 + 투자자별 데이터)
+          try {
+            const kospiProgData = await fetchProgramData(token, programParamsKospi);
+            kospiOutput.innerHTML = createTableHTML(kospiProgData);
+
+            const kospiInvestData = await fetchInvestorData(token, investParamsKospi);
+            updateMarketTitle("kospi-title", "코스피 | ", kospiInvestData);
+          } catch (err) {
+            kospiOutput.innerHTML = `<div class="error">코스피 데이터 수신 실패: ${err.message}</div>`;
+          }
+
+          // API 연속 호출 과부하 방지 디레이 (1초)
+          await delay(1000);
+
+          // 2. 코스닥 연동 (프로그램 순매수 + 투자자별 데이터)
+          try {
+            const kosdaqProgData = await fetchProgramData(token, programParamsKosdaq);
+            kosdaqOutput.innerHTML = createTableHTML(kosdaqProgData);
+
+            const kosdaqInvestData = await fetchInvestorData(token, investParamsKosdaq);
+            updateMarketTitle("kosdaq-title", "코스닥 | ", kosdaqInvestData);
+          } catch (err) {
+            kosdaqOutput.innerHTML = `<div class="error">코스닥 데이터 수신 실패: ${err.message}</div>`;
+          }
+
+          updateTimestamp();
+
+        } catch (e) {
+          console.error("인증 에러:", e);
+          if (kospiOutput) kospiOutput.innerHTML = `<div class="error">인증 오류 또는 서버 점검 중입니다.</div>`;
+          if (kosdaqOutput) kosdaqOutput.innerHTML = `<div class="error">인증 오류 또는 서버 점검 중입니다.</div>`;
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        updateData();
+      });
+    </script>
+  </body>
+</html>

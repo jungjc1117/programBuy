@@ -1,0 +1,374 @@
+<!--종목일봉-->>
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Kiwoom 종목 분석 대시보드</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 10px;
+        background-color: #f4f4f4;
+        margin: 0;
+      }
+      .container {
+        width: 100%;
+        max-width: 430px;
+        box-sizing: border-box;
+        margin: auto;
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      #timestamp {
+        text-align: right;
+        font-size: 0.8em;
+        color: #777;
+        margin-bottom: 15px;
+      }
+      .market-section {
+        margin-bottom: 15px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .market-title {
+        width: 100%;
+        font-size: 0.95em;
+        font-weight: bold;
+        color: #2c3e50;
+        border-left: 4px solid #3498db;
+        padding-left: 8px;
+        margin-bottom: 8px;
+        text-align: left;
+        box-sizing: border-box;
+      }
+      .chart-wrapper {
+        width: 100%;
+        height: 150px;
+        background: #fafafa;
+        border: 1px solid #e8e8e8;
+        border-radius: 4px;
+        position: relative;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+      }
+      .loading, .error, .no-data {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 0.85em;
+        color: #888;
+        width: 100%;
+        text-align: center;
+      }
+      .error { color: red; }
+
+      /* 대시보드 테이블 스타일 */
+      .dashboard-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+        font-size: 0.9em;
+      }
+      .dashboard-table th {
+        background-color: #f8f9fa;
+        color: #666;
+        padding: 8px 10px;
+        border-bottom: 2px solid #dee2e6;
+        text-align: left;
+      }
+      .dashboard-table td {
+        padding: 10px;
+        border-bottom: 1px solid #eceeef;
+        color: #333;
+      }
+      .dashboard-table tr.highlight-row {
+        background-color: #fff5f5;
+      }
+      .rate-cell {
+        text-align: right;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div id="timestamp">최종 업데이트: -</div>
+      
+      <!-- 일봉 차트 구역 -->
+      <div class="market-section">
+        <div class="market-title">종목별 일자별 일봉 차트</div>
+        <div class="chart-wrapper">
+          <canvas id="stock-chart" width="400" height="150"></canvas>
+          <div id="stock-msg" class="loading">데이터를 불러오는 중...</div>
+        </div>
+      </div>
+
+      <!-- 8대 가격 지표 대시보드 구역 -->
+      <div class="market-title">가격 지표 변동률 순위 (내림차순)</div>
+      <table class="dashboard-table">
+        <thead>
+          <tr>
+            <th>비교 지표 항목</th>
+            <th style="text-align: right;">해당 가격</th>
+            <th style="text-align: right;">대비 등락률</th>
+          </tr>
+        </thead>
+        <tbody id="dashboard-tbody">
+          <tr>
+            <td colspan="3" style="text-align: center; color: #999;">데이터를 수신하면 순위가 표시됩니다.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <script>
+      let cachedToken = null;
+
+      const accessParams = {
+        grant_type: "client_credentials",
+        appkey: "-iQmyxQBQb0jmIS-JTaAbsQ1r7u3NhoMX78hMqBsobY",
+        secretkey: "y-fGxZn2OnsyvyqR9kXlTqUiwMuk6IJd6k3xeox0PTo",
+      };
+
+      const chartParams = { stk_cd: '039490_AL', base_dt: '20261231', upd_stkpc_tp: '0' };
+      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+      async function fetchToken() {
+        if (cachedToken) return cachedToken;
+        const url = "https://mockapi.kiwoom.com/oauth2/token";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json;charset=UTF-8" },
+          body: JSON.stringify(accessParams),
+        });
+        if (!res.ok) throw new Error(`토큰 발급 에러: ${res.status}`);
+        const data = await res.json();
+        cachedToken = data.token || data.access_token;
+        return cachedToken;
+      }
+
+      async function fetchMarketData(token, params) {
+        const url = "https://mockapi.kiwoom.com/api/dostk/chart";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka10081",
+            "cont-yn": "N",
+            "next-key": "",
+          },
+          body: JSON.stringify(params),
+        });
+        if (!res.ok) {
+          if (res.status === 401) cachedToken = null; 
+          throw new Error(`데이터 통신 에러: ${res.status}`);
+        }
+        const data = await res.json();
+        return data.stk_dt_pole_chart_qry || [];
+      }
+
+      function parsePrice(value) {
+        if (!value) return 0;
+        let cleanValue = String(value).replace(/[^0-9.-]/g, '');
+        return Math.abs(parseFloat(cleanValue)) || 0;
+      }
+
+      // 일봉 차트 그리기 (최근 60개 봉만 제한 표시)
+      function drawCandleChart(canvas, rawData) {
+        if (!rawData || rawData.length === 0) return;
+
+        // 1. 원본 객체에서 필요한 값 추출
+        let parsedData = rawData.map(item => ({
+          date: item.dt || "",
+          open: parsePrice(item.open_pric),
+          high: parsePrice(item.high_pric),
+          low: parsePrice(item.low_pric),
+          close: parsePrice(item.cur_prc)
+        })).filter(d => d.date !== "");
+
+        // 2. 가장 최근 60개 데이터만 슬라이싱 (배열 앞부분이 최신일 경우)
+        let chartData = parsedData.slice(0, 60);
+
+        // 3. 차트 화면 왼쪽 -> 오른쪽으로 날짜가 흐르도록 오름차순 정렬
+        chartData.sort((a, b) => a.date.localeCompare(b.date));
+
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        const paddingY = 15;
+        const paddingX = 10;
+
+        // 화면 60개 기준 최고가/최저가 스케일 계산
+        const highs = chartData.map(d => d.high);
+        const lows = chartData.map(d => d.low);
+        const maxPrice = Math.max(...highs);
+        const minPrice = Math.min(...lows);
+        const priceRange = maxPrice - minPrice || 1;
+
+        const dataCount = chartData.length;
+        const availableWidth = width - (paddingX * 2);
+        const xStep = dataCount > 1 ? availableWidth / (dataCount - 1) : availableWidth;
+        
+        // 60개가 꽉 찼을 때 캔들 바가 예쁘게 보이도록 너비 최적화 (기존보다 슬림하게 조정)
+        const candleWidth = Math.max(3, (availableWidth / dataCount) * 0.65);
+
+        ctx.clearRect(0, 0, width, height);
+
+        function getCanvasY(price) {
+          const usableHeight = height - (paddingY * 2);
+          return height - paddingY - ((price - minPrice) / priceRange) * usableHeight;
+        }
+
+        chartData.forEach((candle, index) => {
+          const x = paddingX + (index * xStep);
+          const yOpen = getCanvasY(candle.open);
+          const yClose = getCanvasY(candle.close);
+          const yHigh = getCanvasY(candle.high);
+          const yLow = getCanvasY(candle.low);
+
+          let themeColor = '#7f8c8d';
+          if (candle.close > candle.open) themeColor = '#e17055'; // 양봉
+          else if (candle.close < candle.open) themeColor = '#0984e3'; // 음봉
+
+          ctx.strokeStyle = themeColor;
+          ctx.fillStyle = themeColor;
+          ctx.lineWidth = 1.2;
+
+          ctx.beginPath();
+          ctx.moveTo(x, yHigh);
+          ctx.lineTo(x, yLow);
+          ctx.stroke();
+
+          const bodyHeight = Math.abs(yClose - yOpen);
+          const bodyX = x - (candleWidth / 2);
+          const bodyY = Math.min(yOpen, yClose);
+
+          if (bodyHeight === 0) {
+            ctx.beginPath();
+            ctx.moveTo(x - (candleWidth / 2), bodyY);
+            ctx.lineTo(x + (candleWidth / 2), bodyY);
+            ctx.stroke();
+          } else {
+            ctx.fillRect(bodyX, bodyY, candleWidth, bodyHeight);
+          }
+        });
+      }
+
+      // 8대 가격 지표 계산 및 대시보드 정렬 출력 함수
+      function makePriceDashboard(rawData) {
+        if (!rawData || rawData.length < 2) return;
+
+        // 원본 데이터 파싱 및 정렬 (최신 날짜순)
+        let sortedData = rawData.map(item => ({
+          open: parsePrice(item.open_pric),
+          high: parsePrice(item.high_pric),
+          low: parsePrice(item.low_pric),
+          close: parsePrice(item.cur_prc)
+        }));
+        
+        // 당일(최신일), 전일 분리
+        const today = sortedData[0];
+        const yesterday = sortedData[1];
+
+        const curPrc = today.close;       // 현재가격 (당일 종가)
+        const prevClose = yesterday.close; // 전일종가
+        const prevHigh = yesterday.high;   // 전일고가
+        const todayHigh = today.high;     // 당일고가
+
+        // 1. 가장 최근 3일의 가격평균
+        const avg3 = sortedData.slice(0, 3).reduce((acc, d) => acc + d.close, 0) / Math.min(sortedData.length, 3);
+        // 2. 가장 최근 5일의 가격평균
+        const avg5 = sortedData.slice(0, 5).reduce((acc, d) => acc + d.close, 0) / Math.min(sortedData.length, 5);
+        // 3. 가장 최근의 가격평균 (전체 일자 평균)
+        const avgAll = sortedData.reduce((acc, d) => acc + d.close, 0) / sortedData.length;
+        // 4. 최근 60거래일 이내 가장 고점의 가격
+        const max60 = Math.max(...sortedData.slice(0, 60).map(d => d.high));
+
+        // 8대 항목 데이터 수집 (실제 가격인 price 필드 추가)
+        let dashboardItems = [
+          { name: "3일 가격평균", price: avg3, rate: ((avg3 - curPrc) / curPrc) * 100, isCurrent: false },
+          { name: "5일 가격평균", price: avg5, rate: ((avg5 - curPrc) / curPrc) * 100, isCurrent: false },
+          { name: "60일 고가", price: max60, rate: ((max60 - curPrc) / curPrc) * 100, isCurrent: false },
+          { name: "현재가격", price: curPrc, rate: ((curPrc - prevClose) / prevClose) * 100, isCurrent: true }, // 현재가만 전일종가 대비
+          { name: "전일종가", price: prevClose, rate: ((prevClose - curPrc) / curPrc) * 100, isCurrent: false },
+          { name: "전일고가", price: prevHigh, rate: ((prevHigh - curPrc) / curPrc) * 100, isCurrent: false },
+          { name: "당일고가", price: todayHigh, rate: ((todayHigh - curPrc) / curPrc) * 100, isCurrent: false }
+        ];
+
+        // 등락률 높은 순서대로 내림차순 정렬 (Sort)
+        dashboardItems.sort((a, b) => b.rate - a.rate);
+
+        // HTML 화면에 반영
+        const tbody = document.getElementById("dashboard-tbody");
+        tbody.innerHTML = dashboardItems.map(item => {
+          const sign = item.rate > 0 ? "+" : "";
+          const displayRate = `${sign}${item.rate.toFixed(2)}%`;
+          
+          // 가격 포맷팅 (정수로 반올림 후 천 단위 쉼표 추가)
+          const displayPrice = Math.round(item.price).toLocaleString();
+          
+          // 현재가격 행 마킹 스타일 정의
+          const rowClass = item.isCurrent ? "class='highlight-row'" : "";
+          const customStyle = item.isCurrent ? "style='color: #d63031; font-weight: bold;'" : "";
+
+          return `
+            <tr ${rowClass} ${customStyle}>
+              <td>${item.name}</td>
+              <td style="text-align: right;">${displayPrice}</td>
+              <td class="rate-cell">${displayRate}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      function updateTimestamp() {
+        const timestampElement = document.getElementById("timestamp");
+        if (timestampElement) {
+          const now = new Date();
+          timestampElement.innerText = `최종 업데이트: ${now.toLocaleTimeString()}`;
+        }
+      }
+
+      async function updateData() {
+        try {
+          const token = await fetchToken();
+
+          try {
+            const stockData = await fetchMarketData(token, chartParams);
+            
+            // 차트 렌더링
+            const canvas = document.getElementById("stock-chart");
+            document.getElementById("stock-msg").innerText = "";
+            drawCandleChart(canvas, stockData);
+
+            // 8대 가격 지표 대시보드 정렬 출력 실행
+            makePriceDashboard(stockData);
+
+          } catch (err) {
+            document.getElementById("stock-msg").className = "error";
+            document.getElementById("stock-msg").innerText = `종목 데이터 수신 실패`;
+          }
+
+          updateTimestamp();
+
+        } catch (e) {
+          console.error("인증 에러:", e);
+          const el = document.getElementById("stock-msg");
+          if(el) { el.className = "error"; el.innerText = "인증 오류 또는 서버 점검"; }
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        updateData();
+      });
+    </script>
+  </body>
+</html>

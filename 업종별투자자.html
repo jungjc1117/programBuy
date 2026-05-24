@@ -1,0 +1,295 @@
+<!--업종별투자자-->>
+
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- ★ 필수: 모바일 화면에서 글자 크기가 축소되는 것을 방지하는 뷰포트 설정 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Kiwoom 주요 업종 순매수 조회</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 10px; /* 모바일 좌우 여백을 줄여 화면을 더 넓게 활용 */
+        background-color: #f4f4f4;
+        margin: 0;
+      }
+      .container {
+        width: 100%; /* 화면 너비에 맞게 유연하게 늘어남 */
+        max-width: 900px; /* PC에서 볼 때 너무 퍼지지 않도록 최대치만 제한 */
+        box-sizing: border-box; /* 패딩이 너비에 영향을 주지 않도록 설정 */
+        margin: auto;
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        text-align: center;
+        color: #333;
+        font-size: 1.5em; /* 모바일 배려 가독성 높은 크기 */
+        margin-bottom: 5px;
+      }
+      #timestamp {
+        text-align: right;
+        font-size: 0.85em;
+        color: #777;
+        margin-bottom: 15px;
+      }
+      .market-section {
+        margin-bottom: 30px;
+      }
+      .market-title {
+        font-size: 1.1em;
+        font-weight: bold;
+        color: #2c3e50;
+        border-left: 5px solid #3498db;
+        padding-left: 10px;
+        margin-bottom: 10px;
+      }
+      
+      /* ★ 모바일 표 가독성을 위한 핵심 스타일 */
+      .table-wrapper {
+        width: 100%;
+        overflow-x: auto; /* 혹은 화면이 아주 작은 폰에서 표가 넘치면 깨지지 않고 옆으로 스크롤 됨 */
+        -webkit-overflow-scrolling: touch;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 1em; /* 모바일에서 뚜렷하게 보이도록 글자 크기 업그레이드 */
+        background: #fff;
+        table-layout: fixed; /* 컬럼 너비를 고정 비율로 분배 */
+      }
+      th, td {
+        padding: 10px 6px; /* 좁은 모바일 화면을 위해 좌우 간격 최적화 */
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+        word-break: break-all; /* 텍스트가 칸을 넘어가지 않고 자동 줄바꿈 */
+      }
+      /* 컬럼 너비 비율 조정 */
+      th:nth-child(1), td:nth-child(1) { width: 40%; } 
+      th:nth-child(2), td:nth-child(2) { width: 30%; text-align: right; }
+      th:nth-child(3), td:nth-child(3) { width: 30%; text-align: right; }
+      th:nth-child(2), th:nth-child(3) { text-align: right; }
+      
+      th {
+        background-color: #f2f2f2;
+        color: #555;
+        font-size: 0.9em;
+      }
+      tr:hover {
+        background-color: #f9f9f9;
+      }
+      .loading {
+        text-align: center;
+        color: #888;
+        padding: 20px;
+      }
+      .error {
+        color: red;
+        text-align: center;
+        padding: 20px;
+      }
+      .no-data {
+        color: #7f8c8d;
+        text-align: center;
+        padding: 15px;
+        background: #fafafa;
+        border: 1px dashed #ccc;
+        font-size: 0.9em;
+      }
+
+      /* ★ 스마트폰(너비 480px 이하) 전용 미세 조정 디테일 */
+      @media (max-width: 480px) {
+        body { padding: 5px; }
+        .container { padding: 10px; }
+        h1 { font-size: 1.2em; }
+        table { font-size: 0.9em; }
+        th, td { padding: 8px 4px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Kiwoom 주요 업종 순매수 조회</h1>
+      <div id="timestamp">최종 업데이트: -</div>
+
+      <!-- 코스피 출력 구역 -->
+      <div class="market-section">
+        <div class="market-title">코스피 (KOSPI)</div>
+        <div id="kospi-output">
+          <div class="loading">데이터를 불러오는 중입니다...</div>
+        </div>
+      </div>
+
+      <!-- 코스닥 출력 구역 -->
+      <div class="market-section">
+        <div class="market-title">코스닥 (KOSDAQ)</div>
+        <div id="kosdaq-output">
+          <div class="loading">데이터를 불러오는 중입니다...</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let cachedToken = null;
+
+      const accessParams = {
+        grant_type: "client_credentials",
+        appkey: "-iQmyxQBQb0jmIS-JTaAbsQ1r7u3NhoMX78hMqBsobY",
+        secretkey: "y-fGxZn2OnsyvyqR9kXlTqUiwMuk6IJd6k3xeox0PTo",
+      };
+
+      const investParamsKospi = {
+        mrkt_tp: "0", //코스피:0, 코스닥:1
+        amt_qty_tp: "0", //금액:0, 수량:1
+        base_dt: "20261231", //YYYYMMDD
+        stex_tp: "3", //1:KRX, 2:NXT, 3:통합
+      };
+      
+      const investParamsKosdaq = {
+        mrkt_tp: "1", //코스피:0, 코스닥:1
+        amt_qty_tp: "0", //금액:0, 수량:1
+        base_dt: "20261231", //YYYYMMDD
+        stex_tp: "3", //1:KRX, 2:NXT, 3:통합
+      };
+
+      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+      async function fetchToken() {
+        if (cachedToken) return cachedToken;
+        const url = "https://mockapi.kiwoom.com/oauth2/token";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json;charset=UTF-8" },
+          body: JSON.stringify(accessParams),
+        });
+        if (!res.ok) throw new Error(`토큰 발급 에러: ${res.status}`);
+        const data = await res.json();
+        cachedToken = data.token || data.access_token;
+        return cachedToken;
+      }
+
+      async function fetchMarketData(token, params) {
+        const url = "https://mockapi.kiwoom.com/api/dostk/sect";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka10051",
+            "cont-yn": "N",
+            "next-key": "",
+          },
+          body: JSON.stringify(params),
+        });
+        if (!res.ok) {
+          if (res.status === 401) cachedToken = null; 
+          throw new Error(`데이터 통신 에러: ${res.status}`);
+        }
+        const data = await res.json();
+        return data.inds_netprps || [];
+      }
+
+      function createTableHTML(rawData) {
+        if (!rawData || rawData.length === 0) {
+          return `<div class="error">조회된 데이터가 없습니다.</div>`;
+        }
+
+        // ★ inds_cd가 "001_AL" 또는 "101_AL"인 항목만 필터링합니다.
+        const validData = rawData.filter(item => 
+          item.inds_cd === "001_AL" || item.inds_cd === "101_AL"
+        );
+
+        if (validData.length === 0) {
+          return `<div class="no-data">지정한 주요 업종 데이터(001_AL, 101_AL)가 없습니다.</div>`;
+        }
+
+        // 천단위 콤마 포맷 함수
+        const formatNumber = (val) => {
+          if (!val) return "0";
+          return parseInt(val).toLocaleString();
+        };
+
+        return `
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>업종명</th>
+                  <th style="text-align: right;">외국인</th>
+                  <th style="text-align: right;">기관</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${validData
+                  .map((item) => {
+                    return `
+                      <tr>
+                        <td><strong>${item.inds_nm || "-"}</strong> <span style="font-size:0.8em; color:#999;">(${item.inds_cd})</span></td>
+                        <td style="text-align: right; color: ${Number(item.frgnr_netprps) >= 0 ? '#d32f2f' : '#1565c0'}">
+                          ${formatNumber(item.frgnr_netprps)}
+                        </td>
+                        <td style="text-align: right; color: ${Number(item.orgn_netprps) >= 0 ? '#d32f2f' : '#1565c0'}">
+                          ${formatNumber(item.orgn_netprps)}
+                        </td>
+                      </tr>
+                    `;
+                  })
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      function updateTimestamp() {
+        const timestampElement = document.getElementById("timestamp");
+        if (timestampElement) {
+          const now = new Date();
+          timestampElement.innerText = `최종 업데이트: ${now.toLocaleTimeString()}`;
+        }
+      }
+
+      async function updateData() {
+        const kospiOutput = document.getElementById("kospi-output");
+        const kosdaqOutput = document.getElementById("kosdaq-output");
+
+        try {
+          const token = await fetchToken();
+
+          // 1. 코스피 연동
+          try {
+            const kospiData = await fetchMarketData(token, investParamsKospi);
+            kospiOutput.innerHTML = createTableHTML(kospiData);
+          } catch (err) {
+            kospiOutput.innerHTML = `<div class="error">코스피 수신 실패: ${err.message}</div>`;
+          }
+
+          // 2. 부하 방지용 1초 대기
+          await delay(1000);
+
+          // 3. 코스닥 연동
+          try {
+            const kosdaqData = await fetchMarketData(token, investParamsKosdaq);
+            kosdaqOutput.innerHTML = createTableHTML(kosdaqData);
+          } catch (err) {
+            kosdaqOutput.innerHTML = `<div class="error">코스닥 수신 실패: ${err.message}</div>`;
+          }
+
+          updateTimestamp();
+
+        } catch (e) {
+          console.error("인증 토큰 에러:", e);
+          if (kospiOutput) kospiOutput.innerHTML = `<div class="error">인증 오류 또는 가상 서버 점검 중입니다.</div>`;
+          if (kosdaqOutput) kosdaqOutput.innerHTML = `<div class="error">인증 오류 또는 가상 서버 점검 중입니다.</div>`;
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        updateData();
+      });
+    </script>
+  </body>
+</html>

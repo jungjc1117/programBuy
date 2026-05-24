@@ -1,0 +1,285 @@
+<!--프로그램순매수상위-->>
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- ★ 필수: 모바일 화면에서 글자 크기가 축소되는 것을 방지하는 뷰포트 설정 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Kiwoom 프로그램 순매수 순위 조회</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 10px; /* 모바일 좌우 여백을 줄여 화면을 더 넓게 활용 */
+        background-color: #f4f4f4;
+        margin: 0;
+      }
+      .container {
+        width: 100%; /* 화면 너비에 맞게 유연하게 늘어남 */
+        max-width: 900px; /* PC에서 볼 때 너무 퍼지지 않도록 최대치만 제한 */
+        box-sizing: border-box; /* 패딩이 너비에 영향을 주지 않도록 설정 */
+        margin: auto;
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        text-align: center;
+        color: #333;
+        font-size: 1.5em; /* 모바일 배려 가독성 높은 크기 */
+        margin-bottom: 5px;
+      }
+      #timestamp {
+        text-align: right;
+        font-size: 0.85em;
+        color: #777;
+        margin-bottom: 15px;
+      }
+      .market-section {
+        margin-bottom: 30px;
+      }
+      .market-title {
+        font-size: 1.1em;
+        font-weight: bold;
+        color: #2c3e50;
+        border-left: 5px solid #3498db;
+        padding-left: 10px;
+        margin-bottom: 10px;
+      }
+      
+      /* ★ 모바일 표 가독성을 위한 핵심 스타일 */
+      .table-wrapper {
+        width: 100%;
+        overflow-x: auto; /* 혹시 화면이 아주 작은 폰에서 표가 넘치면 깨지지 않고 옆으로 스크롤 됨 */
+        -webkit-overflow-scrolling: touch;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 1em; /* 모바일에서 뚜렷하게 보이도록 글자 크기 업그레이드 */
+        background: #fff;
+        table-layout: fixed; /* 컬럼 너비를 고정 비율로 분배 */
+      }
+      th, td {
+        padding: 10px 6px; /* 좁은 모바일 화면을 위해 좌우 간격 최적화 */
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+        word-break: break-all; /* 텍스트가 칸을 넘어가지 않고 자동 줄바꿈 */
+      }
+      /* 컬럼 너비 비율 조정 (종목명에 더 많은 공간 부여) */
+      th:nth-child(1), td:nth-child(1) { width: 45%; } 
+      th:nth-child(2), td:nth-child(2) { width: 25%; }
+      th:nth-child(3), td:nth-child(3) { width: 30%; text-align: right; } /* 금액은 우측 정렬 */
+      th:nth-child(3) { text-align: left; }
+      
+      th {
+        background-color: #f2f2f2;
+        color: #555;
+        font-size: 0.9em;
+      }
+      tr:hover {
+        background-color: #f9f9f9;
+      }
+      .loading {
+        text-align: center;
+        color: #888;
+        padding: 20px;
+      }
+      .error {
+        color: red;
+        text-align: center;
+        padding: 20px;
+      }
+      .no-data {
+        color: #7f8c8d;
+        text-align: center;
+        padding: 15px;
+        background: #fafafa;
+        border: 1px dashed #ccc;
+        font-size: 0.9em;
+      }
+
+      /* ★ 스마트폰(너비 480px 이하) 전용 미세 조정 디테일 */
+      @media (max-width: 480px) {
+        body { padding: 5px; }
+        .container { padding: 10px; }
+        h1 { font-size: 1.2em; }
+        table { font-size: 0.95em; }
+        th, td { padding: 8px 4px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+
+      <!-- 코스피 출력 구역 -->
+      <div class="market-section">
+        <div id="kospi-output">
+          <div class="loading">데이터를 불러오는 중입니다...</div>
+        </div>
+      </div>
+
+      <!-- 코스닥 출력 구역 -->
+      <div class="market-section">
+        <div id="kosdaq-output">
+          <div class="loading">데이터를 불러오는 중입니다...</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let cachedToken = null;
+
+      const accessParams = {
+        grant_type: "client_credentials",
+        appkey: "-iQmyxQBQb0jmIS-JTaAbsQ1r7u3NhoMX78hMqBsobY",
+        secretkey: "y-fGxZn2OnsyvyqR9kXlTqUiwMuk6IJd6k3xeox0PTo",
+      };
+
+      const chartParamsKospi = {
+        trde_upper_tp: "2", 
+        amt_qty_tp: "1", 
+        mrkt_tp: "P00101", 
+        stex_tp: "3", 
+      };
+      
+      const chartParamsKosdaq = {
+        trde_upper_tp: "2", 
+        amt_qty_tp: "1", 
+        mrkt_tp: "P10102", 
+        stex_tp: "3", 
+      };
+
+      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+      async function fetchToken() {
+        if (cachedToken) return cachedToken;
+        const url = "https://mockapi.kiwoom.com/oauth2/token";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json;charset=UTF-8" },
+          body: JSON.stringify(accessParams),
+        });
+        if (!res.ok) throw new Error(`토큰 발급 에러: ${res.status}`);
+        const data = await res.json();
+        cachedToken = data.token || data.access_token;
+        return cachedToken;
+      }
+
+      async function fetchMarketData(token, params) {
+        const url = "https://mockapi.kiwoom.com/api/dostk/stkinfo";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka90003",
+            "cont-yn": "N",
+            "next-key": "",
+          },
+          body: JSON.stringify(params),
+        });
+        if (!res.ok) {
+          if (res.status === 401) cachedToken = null; 
+          throw new Error(`데이터 통신 에러: ${res.status}`);
+        }
+        const data = await res.json();
+        return data.prm_netprps_upper_50 || [];
+      }
+
+      function createTableHTML(rawData) {
+        if (!rawData || rawData.length === 0) {
+          return `<div class="error">조회된 데이터가 없습니다.</div>`;
+        }
+
+        const positiveData = rawData.filter(item => {
+          if (!item.flu_rt) return false;
+          return String(item.flu_rt).trim().includes("+");
+        });
+
+        if (positiveData.length === 0) {
+          return `<div class="no-data">현재 등락률이 + 인 상승 종목이 없습니다.</div>`;
+        }
+
+        // 모바일 화면 깨짐 방지를 위해 table 외곽을 <div class="table-wrapper">로 감싸줍니다.
+        return `
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>종목명</th>
+                  <th>등락률</th>
+                  <th style="text-align: right;">순매수액</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${positiveData
+                  .map((item) => {
+                    let displayFluRt = String(item.flu_rt).trim();
+                    if (!displayFluRt.includes("%")) displayFluRt += "%";
+
+                    return `
+                      <tr>
+                        <td><strong>${item.stk_nm || "-"}</strong></td>
+                        <td style="color: #d63031; font-weight: bold;">${displayFluRt}</td>
+                        <td style="text-align: right;">${item.prm_netprps_amt ? parseInt(item.prm_netprps_amt).toLocaleString() : "-"}</td>
+                      </tr>
+                    `;
+                  })
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      function updateTimestamp() {
+        const timestampElement = document.getElementById("timestamp");
+        if (timestampElement) {
+          const now = new Date();
+          timestampElement.innerText = `최종 업데이트: ${now.toLocaleTimeString()}`;
+        }
+      }
+
+      async function updateData() {
+        const kospiOutput = document.getElementById("kospi-output");
+        const kosdaqOutput = document.getElementById("kosdaq-output");
+
+        try {
+          const token = await fetchToken();
+
+          // 1. 코스피 연동
+          try {
+            const kospiData = await fetchMarketData(token, chartParamsKospi);
+            kospiOutput.innerHTML = createTableHTML(kospiData);
+          } catch (err) {
+            kospiOutput.innerHTML = `<div class="error">코스피 수신 실패: ${err.message}</div>`;
+          }
+
+          // 2. 부하 방지용 1초 대기
+          await delay(1000);
+
+          // 3. 코스닥 연동
+          try {
+            const kosdaqData = await fetchMarketData(token, chartParamsKosdaq);
+            kosdaqOutput.innerHTML = createTableHTML(kosdaqData);
+          } catch (err) {
+            kosdaqOutput.innerHTML = `<div class="error">코스닥 수신 실패: ${err.message}</div>`;
+          }
+
+          updateTimestamp();
+
+        } catch (e) {
+          console.error("인증 토큰 에러:", e);
+          if (kospiOutput) kospiOutput.innerHTML = `<div class="error">인증 오류 또는 가상 서버 점검 중입니다.</div>`;
+          if (kosdaqOutput) kosdaqOutput.innerHTML = `<div class="error">인증 오류 또는 가상 서버 점검 중입니다.</div>`;
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        updateData();
+        setInterval(updateData, 12000); 
+      });
+    </script>
+  </body>
+</html>
