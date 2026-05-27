@@ -1,19 +1,19 @@
-<!--차트투자자가격비교프로그램-->
+<!--차트일자별가격비교프로그램거래대금-->
 <!DOCTYPE html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Kiwoom 프로그램 순매수 순위 및 종목 분석 대시보드</title>
+    <title>Kiwoom 프로그램 순매수 순위 및 시장/종목 분석 대시보드</title>
     <style>
       /* [글자 크기 조절 옵션] 여기 px 수치를 바꾸면 전체 글씨 크기가 조절됩니다 */
       :root {
-        --base-font-size: 10px; 
+        --base-font-size: 13px; 
       }
 
       body {
         font-family: Arial, sans-serif;
-        padding: 1px;
+        padding: 8px;
         background-color: #f4f4f4;
         margin: 0;
         font-size: var(--base-font-size);
@@ -22,31 +22,20 @@
         width: 100%;
         max-width: 1000px;
         box-sizing: border-box;
-        margin: 0 auto 5px auto;
+        margin: 0 auto 12px auto;
         background: white;
-        padding: 5px;
-        border-radius: 2px;
+        padding: 12px;
+        border-radius: 6px;
         box-shadow: 0 0 8px rgba(0, 0, 0, 0.05);
       }
-      h1 {
-        text-align: center;
-        color: #333;
-        font-size: 1.4em;
-        margin: 5px 0 15px 0;
-      }
-      
-      /* 코스피, 코스닥 좌우 배치를 위한 플렉스 박스 설정 */
-      .market-flex-container {
-        display: flex;
-        gap: 12px;
-        width: 100%;
-      }
-      .market-section {
-        flex: 1;
-        min-width: 0; /* flex 자식 요소의 말줄임 및 크기 깨짐 방지 */
+      #timestamp {
+        text-align: right;
+        font-size: 0.85em;
+        color: #777;
+        margin-top: -5px;
         margin-bottom: 10px;
       }
-
+      
       .market-title {
         font-size: 1.05em;
         font-weight: bold;
@@ -55,14 +44,32 @@
         padding-left: 8px;
         margin-bottom: 8px;
       }
+      
+      /* 차트 및 대시보드 레이아웃 스타일 */
+      .charts-grid {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .chart-container-full {
+        flex: 1;
+        min-width: 0;
+      }
+      .chart-sub-title {
+        font-size: 0.9em;
+        font-weight: bold;
+        color: #555;
+        margin-bottom: 4px;
+        padding-left: 2px;
+      }
+
       .chart-wrapper {
         width: 100%;
-        height: 80px;
+        height: 150px;
         background: #fafafa;
         border: 1px solid #e8e8e8;
         border-radius: 4px;
         position: relative;
-        margin-bottom: 12px;
       }
       canvas {
         display: block;
@@ -82,9 +89,8 @@
         table-layout: fixed;
       }
       
-      /* [요구사항] th, td 패딩 최소화 적용 */
       th, td {
-        padding: 4px 1px;
+        padding: 4px 2px;
         text-align: left;
         border-bottom: 1px solid #eee;
         word-break: break-all;
@@ -92,8 +98,9 @@
       }
       
       /* 프로그램 매수 순위 리스트 테이블 스타일 */
-      .rank-table th:nth-child(1), .rank-table td:nth-child(1) { width: 65%; padding-left: 6px; }
-      .rank-table th:nth-child(2), .rank-table td:nth-child(2) { width: 35%; text-align: center; }
+      .rank-table th:nth-child(1), .rank-table td:nth-child(1) { width: 45%; padding-left: 6px; }
+      .rank-table th:nth-child(2), .rank-table td:nth-child(2) { width: 25%; text-align: center; }
+      .rank-table th:nth-child(3), .rank-table td:nth-child(3) { width: 30%; text-align: right; padding-right: 6px; }
       .rank-table tbody tr { cursor: pointer; transition: background-color 0.15s; }
       .rank-table tbody tr:hover { background-color: #f1f3f5; }
       .rank-table tbody tr.selected-row { background-color: #e8f4fd !important; }
@@ -102,7 +109,11 @@
       .dashboard-table th:nth-child(1), .dashboard-table td:nth-child(1) { width: 50%; padding-left: 6px; }
       .dashboard-table th:nth-child(2), .dashboard-table td:nth-child(2) { width: 25%; text-align: right; }
       .dashboard-table th:nth-child(3), .dashboard-table td:nth-child(3) { width: 25%; text-align: right; padding-right: 6px; }
-      .dashboard-table tr.highlight-row { background-color: #fff5f5; }
+      
+      /* 🛠️ 음영 스타일 정의 */
+      .dashboard-table tr.highlight-red-row { background-color: #fff5f5 !important; color: #d63031; font-weight: bold; }
+      .dashboard-table tr.highlight-blue-row { background-color: #e8f4fd !important; color: #0984e3; font-weight: bold; }
+      
       .rate-cell { text-align: right; font-weight: bold; }
       
       th {
@@ -117,13 +128,15 @@
         padding: 15px;
         font-size: 0.9em;
       }
-      .chart-loading {
+      .chart-loading, .no-data {
         position: absolute;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
         color: #888;
         font-size: 0.9em;
+        text-align: center;
+        width: 90%;
       }
       .error {
         color: #d63031;
@@ -131,43 +144,42 @@
         padding: 15px;
         font-size: 0.9em;
       }
-      .no-data {
-        color: #7f8c8d;
-        text-align: center;
-        padding: 12px;
-        background: #fafafa;
-        border: 1px dashed #ccc;
-        font-size: 0.9em;
+
+      /* 코스피, 코스닥 구역 플렉스 박스 설정 */
+      .market-flex-container {
+        display: flex;
+        gap: 12px;
+        width: 100%;
+      }
+      .market-section {
+        flex: 1;
+        min-width: 0;
+        margin-bottom: 10px;
       }
 
-/* 모바일에서도 무조건 좌우 배치를 유지하고, 내용이 넘치지 않도록 스크롤 및 여백 최적화 */
-@media (max-width: 600px) {
-  .market-flex-container {
-    flex-direction: row; /* 가로 배치 강제 유지 */
-    gap: 6px;           /* 모바일 화면을 고려해 좌우 간격을 조금 줄임 */
-  }
-  
-  /* 글자 크기가 너무 커서 깨지는 것을 방지하기 위해 모바일에서만 기본 폰트 크기를 살짝 조절 */
-  :root {
-    --base-font-size: 9px; 
-  }
-}
-
+      /* 모바일 반응형: 화면이 좁아지면 좌우 배치를 상하 배치로 전환 */
+      @media (max-width: 600px) {
+        .market-flex-container, .charts-grid {
+          flex-direction: column;
+          gap: 15px;
+        }
+      }
     </style>
   </head>
   <body>
 
-    <!-- 상단: 분석 결과 영역 (선택된 종목의 차트 및 8대 대시보드 출력) -->
     <div class="container">
       <div class="market-title" id="analysis-title">종목 분석 대시보드 (선택된 종목 없음)</div>
       
-      <!-- 일봉 차트 구역 -->
-      <div class="chart-wrapper">
-        <canvas id="stock-chart" width="800" height="300"></canvas>
-        <div id="stock-msg" class="chart-loading">순위를 클릭하면 차트가 로드됩니다.</div>
+      <div class="charts-grid">
+        <div class="chart-container-full">
+          <div class="chart-wrapper">
+            <canvas id="stock-chart" width="1000" height="150"></canvas>
+            <div id="stock-msg" class="chart-loading">순위를 클릭하면 차트가 로드됩니다.</div>
+          </div>
+        </div>
       </div>
 
-      <!-- 8대 가격 지표 대시보드 구역 -->
       <div class="table-wrapper">
         <table class="dashboard-table">
           <thead>
@@ -186,21 +198,23 @@
       </div>
     </div>
 
-    <!-- 하단: 프로그램 매수 현황 및 시장 종합 리스트 (좌우 배치 변경 구역) -->
     <div class="container">
-
       <div class="market-flex-container">
-        <!-- 코스피 출력 구역 -->
         <div class="market-section">
-          <div class="market-title" id="kospi-title">코스피 시장</div>
+          <div class="chart-wrapper" style="margin-bottom: 12px; height: 110px;">
+            <canvas id="kospi-market-chart" width="480" height="110"></canvas>
+            <div id="kospi-market-msg" class="chart-loading">시장 데이터 불러오는 중...</div>
+          </div>
           <div id="kospi-output">
             <div class="loading">데이터를 불러오는 중입니다...</div>
           </div>
         </div>
 
-        <!-- 코스닥 출력 구역 -->
         <div class="market-section">
-          <div class="market-title" id="kosdaq-title">코스닥 시장</div>
+          <div class="chart-wrapper" style="margin-bottom: 12px; height: 110px;">
+            <canvas id="kosdaq-market-chart" width="480" height="110"></canvas>
+            <div id="kosdaq-market-msg" class="chart-loading">시장 데이터 불러오는 중...</div>
+          </div>
           <div id="kosdaq-output">
             <div class="loading">데이터를 불러오는 중입니다...</div>
           </div>
@@ -217,11 +231,12 @@
         secretkey: "y-fGxZn2OnsyvyqR9kXlTqUiwMuk6IJd6k3xeox0PTo",
       };
 
+      // API 파라미터 셋업
       const programParamsKospi = { trde_upper_tp: "2", amt_qty_tp: "1", mrkt_tp: "P00101", stex_tp: "3" };
       const programParamsKosdaq = { trde_upper_tp: "2", amt_qty_tp: "1", mrkt_tp: "P10102", stex_tp: "3" };
 
-      const investParamsKospi = { mrkt_tp: "0", amt_qty_tp: "0", base_dt: "20260524", stex_tp: "3" };
-      const investParamsKosdaq = { mrkt_tp: "1", amt_qty_tp: "0", base_dt: "20260524", stex_tp: "3" };
+      const chartParamsKospi = { date: '20261231', amt_qty_tp: '1', mrkt_tp: 'P00101', min_tic_tp: '1', stex_tp: '3' };
+      const chartParamsKosdaq = { date: '20261231', amt_qty_tp: '1', mrkt_tp: 'P10102', min_tic_tp: '1', stex_tp: '3' };
 
       const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -239,6 +254,7 @@
         return cachedToken;
       }
 
+      // 종목 랭킹 리스트 API
       async function fetchProgramData(token, params) {
         const url = "https://mockapi.kiwoom.com/api/dostk/stkinfo";
         const res = await fetch(url, {
@@ -260,27 +276,7 @@
         return data.prm_netprps_upper_50 || [];
       }
 
-      async function fetchInvestorData(token, params) {
-        const url = "https://mockapi.kiwoom.com/api/dostk/sect";
-        const res = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json;charset=UTF-8",
-            authorization: `Bearer ${token}`,
-            "api-id": "ka10051",
-            "cont-yn": "N",
-            "next-key": "",
-          },
-          body: JSON.stringify(params),
-        });
-        if (!res.ok) {
-          if (res.status === 401) cachedToken = null; 
-          throw new Error(`데이터 통신 에러 (투자자): ${res.status}`);
-        }
-        const data = await res.json();
-        return data.inds_netprps || [];
-      }
-
+      // 개별 종목 차트 API
       async function fetchMarketData(token, params) {
         const url = "https://mockapi.kiwoom.com/api/dostk/chart";
         const res = await fetch(url, {
@@ -302,12 +298,41 @@
         return data.stk_dt_pole_chart_qry || [];
       }
 
+      // 시장 전체 추이 데이터 API
+      async function fetchMarketTrendData(token, params) {
+        const url = "https://mockapi.kiwoom.com/api/dostk/mrkcond";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka90010",
+            "cont-yn": "N",
+            "next-key": "",
+          },
+          body: JSON.stringify(params),
+        });
+        if (!res.ok) {
+          if (res.status === 401) cachedToken = null;
+          throw new Error(`시장 통신 에러: ${res.status}`);
+        }
+        const data = await res.json();
+        return data.prm_trde_trnsn || [];
+      }
+
       function parsePrice(value) {
         if (!value) return 0;
         let cleanValue = String(value).replace(/[^0-9.-]/g, '');
-        return Math.abs(parseFloat(cleanValue)) || 0;
+        return parseFloat(cleanValue) || 0;
       }
 
+      function parseNetprps(value) {
+        if (!value) return 0;
+        let cleanValue = String(value).replace(/--/g, '-').replace(/\+/g, '');
+        return parseFloat(cleanValue) || 0;
+      }
+
+      // [1] 개별 종목 일봉 캔들 차트 활성화
       function drawCandleChart(canvas, rawData) {
         const ctx = canvas.getContext('2d');
         const width = canvas.width;
@@ -318,17 +343,17 @@
 
         let parsedData = rawData.map(item => ({
           date: item.dt || "",
-          open: parsePrice(item.open_pric),
-          high: parsePrice(item.high_pric),
-          low: parsePrice(item.low_pric),
-          close: parsePrice(item.cur_prc)
+          open: Math.abs(parsePrice(item.open_pric)),
+          high: Math.abs(parsePrice(item.high_pric)),
+          low: Math.abs(parsePrice(item.low_pric)),
+          close: Math.abs(parsePrice(item.cur_prc))
         })).filter(d => d.date !== "");
 
         let chartData = parsedData.slice(0, 60);
         chartData.sort((a, b) => a.date.localeCompare(b.date));
 
         const paddingY = 10;
-        const paddingX = 10;
+        const paddingX = 15;
 
         const highs = chartData.map(d => d.high);
         const lows = chartData.map(d => d.low);
@@ -381,6 +406,78 @@
         });
       }
 
+      // [2] 코스피/코스닥 시장전체 0축 기준 일자별 프로그램 봉차트(Bar Chart) 렌더링 함수 (음수도 위로 그리되 파란색 처리)
+      function drawMiniBarChart(canvasId, msgId, rawData) {
+        const canvas = document.getElementById(canvasId);
+        const msgDiv = document.getElementById(msgId);
+        
+        if (!rawData || rawData.length === 0) {
+          msgDiv.className = "no-data";
+          msgDiv.innerText = "데이터가 없습니다.";
+          return;
+        }
+
+        let chartData = rawData.map(item => ({
+          time: item.cntr_tm || "",
+          value: parseNetprps(item.all_netprps)
+        }));
+        chartData.sort((a, b) => a.time.localeCompare(b.time));
+
+        if(msgDiv) msgDiv.style.display = "none"; 
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        const paddingY = 8; 
+        const paddingX = 8;  
+
+        const values = chartData.map(d => d.value);
+        // 가장 큰 절대값을 기준으로 스케일을 잡습니다.
+        const maxAbsVal = Math.max(...values.map(v => Math.abs(v)), 100); 
+
+        // 💡 모든 막대를 위로 올리기 위해 하단 기준선(바닥)을 Y축의 아래쪽으로 설정합니다.
+        const yBase = height - paddingY; 
+        const dataCount = chartData.length;
+        const availableWidth = width - (paddingX * 2);
+        
+        const barWidth = Math.max(1.5, (availableWidth / dataCount) * 0.7);
+        const xStep = availableWidth / (dataCount - 1 || 1);
+
+        ctx.clearRect(0, 0, width, height);
+
+        // 하단 기준선(점선) 그리기
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = '#b2bec3';
+        ctx.lineWidth = 1;
+        ctx.moveTo(0, yBase);
+        ctx.lineTo(width, yBase);
+        ctx.stroke();
+        ctx.restore();
+
+        // 수급 데이터 순회하며 봉 그리기
+        chartData.forEach((point, index) => {
+          const x = paddingX + (index * xStep) - (barWidth / 2);
+          
+          // 가용 높이 계산 (패딩 제외 전체 높이)
+          const usableHeight = height - (paddingY * 2);
+          
+          // 💡 Math.abs()를 사용하여 음수 데이터도 항상 양수 높이로 변환합니다.
+          const barHeight = (Math.abs(point.value) / maxAbsVal) * usableHeight;
+
+          // 💡 색상 결정: 0 이상은 오렌지/레드, 음수(0 미만)는 블루
+          if (point.value >= 0) {
+            ctx.fillStyle = '#e17055'; 
+          } else {
+            ctx.fillStyle = '#0984e3'; 
+          }
+
+          // 💡 yBase(바닥)에서 위 방향(-barHeight)으로 막대를 채웁니다.
+          ctx.fillRect(x, yBase, barWidth, -barHeight);
+        });
+      }
+
+      // [3] 8대 가격 대시보드 테이블 연산 매핑
       function makePriceDashboard(rawData) {
         const tbody = document.getElementById("dashboard-tbody");
         if (!rawData || rawData.length < 2) {
@@ -389,10 +486,10 @@
         }
 
         let sortedData = rawData.map(item => ({
-          open: parsePrice(item.open_pric),
-          high: parsePrice(item.high_pric),
-          low: parsePrice(item.low_pric),
-          close: parsePrice(item.cur_prc)
+          open: Math.abs(parsePrice(item.open_pric)),
+          high: Math.abs(parsePrice(item.high_pric)),
+          low: Math.abs(parsePrice(item.low_pric)),
+          close: Math.abs(parsePrice(item.cur_prc))
         }));
         
         const today = sortedData[0];
@@ -406,18 +503,17 @@
         const avg3 = sortedData.slice(0, 3).reduce((acc, d) => acc + d.close, 0) / Math.min(sortedData.length, 3);
         const avg5 = sortedData.slice(0, 5).reduce((acc, d) => acc + d.close, 0) / Math.min(sortedData.length, 5);
         const avg20 = sortedData.slice(0, 20).reduce((acc, d) => acc + d.close, 0) / Math.min(sortedData.length, 20);
-        const avgAll = sortedData.reduce((acc, d) => acc + d.close, 0) / sortedData.length;
         const max60 = Math.max(...sortedData.slice(0, 60).map(d => d.high));
 
         let dashboardItems = [
-          { name: "3일 평균", price: avg3, rate: ((avg3 - curPrc) / curPrc) * 100, isCurrent: false },
-          { name: "5일 평균", price: avg5, rate: ((avg5 - curPrc) / curPrc) * 100, isCurrent: false },
-          { name: "20일 평균", price: avg20, rate: ((avg20 - curPrc) / curPrc) * 100, isCurrent: false },
-          { name: "60일 고가", price: max60, rate: ((max60 - curPrc) / curPrc) * 100, isCurrent: false },
-          { name: "현재가격", price: curPrc, rate: ((curPrc - prevClose) / prevClose) * 100, isCurrent: true }, 
-          { name: "전일종가", price: prevClose, rate: ((prevClose - curPrc) / curPrc) * 100, isCurrent: false },
-          { name: "전일고가", price: prevHigh, rate: ((prevHigh - curPrc) / curPrc) * 100, isCurrent: false },
-          { name: "당일고가", price: todayHigh, rate: ((todayHigh - curPrc) / curPrc) * 100, isCurrent: false }
+          { name: "3일 평균", price: avg3, rate: ((avg3 - curPrc) / curPrc) * 100, type: "blue" },
+          { name: "5일 평균", price: avg5, rate: ((avg5 - curPrc) / curPrc) * 100, type: "blue" },
+          { name: "20일 평균", price: avg20, rate: ((avg20 - curPrc) / curPrc) * 100, type: "normal" },
+          { name: "60일 고가", price: max60, rate: ((max60 - curPrc) / curPrc) * 100, type: "normal" },
+          { name: "현재가격", price: curPrc, rate: ((curPrc - prevClose) / prevClose) * 100, type: "red" }, 
+          { name: "전일종가", price: prevClose, rate: ((prevClose - curPrc) / curPrc) * 100, type: "normal" },
+          { name: "전일고가", price: prevHigh, rate: ((prevHigh - curPrc) / curPrc) * 100, type: "normal" },
+          { name: "당일고가", price: todayHigh, rate: ((todayHigh - curPrc) / curPrc) * 100, type: "normal" }
         ];
 
         dashboardItems.sort((a, b) => b.price - a.price);
@@ -427,11 +523,16 @@
           const displayRate = `${sign}${item.rate.toFixed(2)}%`;
           const displayPrice = Math.round(item.price).toLocaleString();
           
-          const rowClass = item.isCurrent ? "class='highlight-row'" : "";
-          const customStyle = item.isCurrent ? "style='color: #d63031; font-weight: bold;'" : "";
+          // 🛠️ 지표 성격별 조건 처리 분기문 확립
+          let rowClass = "";
+          if (item.type === "red") {
+            rowClass = "class='highlight-red-row'";
+          } else if (item.type === "blue") {
+            rowClass = "class='highlight-blue-row'";
+          }
 
           return `
-            <tr ${rowClass} ${customStyle}>
+            <tr ${rowClass}>
               <td>${item.name}</td>
               <td style="text-align: right;">${displayPrice}</td>
               <td class="rate-cell">${displayRate}</td>
@@ -440,6 +541,7 @@
         }).join("");
       }
 
+      // 종목 클릭 시 차트 및 대시보드 실시간 호출 로드
       async function loadStockAnalysis(stkCd, stkNm) {
         const msgEl = document.getElementById("stock-msg");
         const titleEl = document.getElementById("analysis-title");
@@ -447,7 +549,8 @@
         
         msgEl.style.display = "block";
         msgEl.className = "chart-loading";
-        msgEl.innerText = `[${stkNm}] 분석 데이터를 가져오는 중...`;
+        msgEl.innerText = `[${stkNm}] 가격 분석 가져오는 중...`;
+
         titleEl.innerText = `${stkNm} (${stkCd})`;
 
         try {
@@ -456,6 +559,7 @@
           const stockData = await fetchMarketData(token, targetParams);
           
           msgEl.style.display = "none";
+
           drawCandleChart(canvas, stockData);
           makePriceDashboard(stockData);
         } catch (err) {
@@ -486,6 +590,7 @@
                 <tr>
                   <th>종목명</th>
                   <th style="text-align: center;">등락률</th>
+                  <th style="text-align: right; padding-right: 6px;">거래대금(억)</th>
                 </tr>
               </thead>
               <tbody>
@@ -494,10 +599,16 @@
                     let displayFluRt = String(item.flu_rt).trim();
                     if (!displayFluRt.includes("%")) displayFluRt += "%";
 
+                    // 거래대금 연산 보완 및 포맷팅 (소수점 제거하여 가독성 확보)
+                    let accQty = parseFloat(item.acc_trde_qty) || 0;
+                    let curPrc = Math.abs(parsePrice(item.cur_prc));
+                    let transactionAmount = ((curPrc * accQty) / 100000000).toFixed(0);
+
                     return `
                       <tr data-code="${item.stk_cd || ''}" data-name="${item.stk_nm || ''}">
                         <td><strong>${item.stk_nm || "-"}</strong></td>
                         <td style="color: #d63031; font-weight: bold; text-align: center;">${displayFluRt}</td>
+                        <td style="text-align: right; padding-right: 6px; font-weight: 500;">${Number(transactionAmount).toLocaleString()}</td>
                       </tr>
                     `;
                   })
@@ -508,88 +619,63 @@
         `;
       }
 
-      function updateMarketTitle(elementId, marketName, investorData) {
-        const titleEl = document.getElementById(elementId);
-        if (!titleEl) return;
-
-        const target = investorData.find(item => item.inds_cd === "001_AL" || item.inds_cd === "101_AL");
-        if (!target) {
-          titleEl.innerText = `${marketName} (시장 정보 없음)`;
-          return;
-        }
-
-        const frgnr = Number(target.frgnr_netprps) || 0;
-        const orgn = Number(target.orgn_netprps) || 0;
-        const frgnrColor = frgnr >= 0 ? '#d32f2f' : '#1565c0';
-        const orgnColor = orgn >= 0 ? '#d32f2f' : '#1565c0';
-
-        titleEl.innerHTML = `
-          ${marketName} 
-           <span style="color: ${frgnrColor}">외 ${frgnr > 0 ? '+' : ''}${Math.round(frgnr).toLocaleString()}</span> | 
-           <span style="color: ${orgnColor}">기 ${orgn > 0 ? '+' : ''}${Math.round(orgn).toLocaleString()}</span>
-        `;
-      }
-
-      async function initApplication() {
+      // 시장 종합 정보 및 리스트 최초 업데이트 프로세스
+      async function updateMarketAndLists() {
         const kospiOutput = document.getElementById("kospi-output");
         const kosdaqOutput = document.getElementById("kosdaq-output");
         let initialStock = null;
 
         try {
           const token = await fetchToken();
-          await delay(600); 
+          
+          // 1. 코스피 시장 전체 일자별 프로그램 추이 차트 그리기
+          try {
+            const kospiMarketData = await fetchMarketTrendData(token, chartParamsKospi);
+            drawMiniBarChart("kospi-market-chart", "kospi-market-msg", kospiMarketData);
+          } catch(err) {
+            console.error("코스피 시장 데이터 로드 실패:", err);
+          }
 
-          // 코스피 프로그램 순매수 조회
+          await delay(1000);
+
+          // 2. 코스닥 시장 전체 일자별 프로그램 추이 차트 그리기
+          try {
+            const kosdaqMarketData = await fetchMarketTrendData(token, chartParamsKosdaq);
+            drawMiniBarChart("kosdaq-market-chart", "kosdaq-market-msg", kosdaqMarketData);
+          } catch(err) {
+            console.error("코스닥 시장 데이터 로드 실패:", err);
+          }
+
+          await delay(1000);
+
+          // 3. 하단 코스피 랭킹 테이블 데이터 갱신
           try {
             const kospiProgData = await fetchProgramData(token, programParamsKospi);
             kospiOutput.innerHTML = createTableHTML(kospiProgData);
-
-            if (kospiProgData.length > 0 && !initialStock) {
+            if (kospiProgData.length > 0) {
               initialStock = { code: kospiProgData[0].stk_cd, name: kospiProgData[0].stk_nm };
             }
           } catch (err) {
-            kospiOutput.innerHTML = `<div class="error">코스피 데이터 실패: ${err.message}</div>`;
+            kospiOutput.innerHTML = `<div class="error">코스피 리스트 갱신 실패</div>`;
           }
 
-          await delay(600); 
+          await delay(1000);
 
-          // 코스피 투자자별 종합 조회
-          try {
-            const kospiInvestData = await fetchInvestorData(token, investParamsKospi);
-            updateMarketTitle("kospi-title", "코스피 | ", kospiInvestData);
-          } catch (err) {
-            console.error("코스피 투자자 조회 실패:", err);
-          }
-
-          await delay(800); 
-
-          // 코스닥 프로그램 순매수 조회
+          // 4. 하단 코스닥 랭킹 테이블 데이터 갱신
           try {
             const kosdaqProgData = await fetchProgramData(token, programParamsKosdaq);
             kosdaqOutput.innerHTML = createTableHTML(kosdaqProgData);
-
             if (kosdaqProgData.length > 0 && !initialStock) {
               initialStock = { code: kosdaqProgData[0].stk_cd, name: kosdaqProgData[0].stk_nm };
             }
           } catch (err) {
-            kosdaqOutput.innerHTML = `<div class="error">코스닥 데이터 실패: ${err.message}</div>`;
+            kosdaqOutput.innerHTML = `<div class="error">코스닥 리스트 갱신 실패</div>`;
           }
 
-          await delay(600); 
-
-          // 코스닥 투자자별 종합 조회
-          try {
-            const kosdaqInvestData = await fetchInvestorData(token, investParamsKosdaq);
-            updateMarketTitle("kosdaq-title", "코스닥 | ", kosdaqInvestData);
-          } catch (err) {
-            console.error("코스닥 투자자 조회 실패:", err);
-          }
-
-          await delay(600); 
-
-          if (initialStock && initialStock.code) {
+          // 최초 로드 시에만 첫 번째 종목 자동 로드 실행
+          const currentTitle = document.getElementById("analysis-title").innerText;
+          if (currentTitle.includes("선택된 종목 없음") && initialStock && initialStock.code) {
             loadStockAnalysis(initialStock.code, initialStock.name);
-            
             setTimeout(() => {
               const firstRow = document.querySelector(`tr[data-code="${initialStock.code}"]`);
               if (firstRow) firstRow.classList.add("selected-row");
@@ -597,11 +683,11 @@
           }
 
         } catch (e) {
-          console.error("인증 에러:", e);
-          if (kospiOutput) kospiOutput.innerHTML = `<div class="error">인증 오류 혹은 서버 통신 불가</div>`;
+          console.error("애플리케이션 초기화 실패:", e);
         }
       }
 
+      // 클릭 이벤트 바인딩
       document.addEventListener("click", function (e) {
         const row = e.target.closest("tr[data-code]");
         if (!row) return;
@@ -619,7 +705,7 @@
       });
 
       document.addEventListener("DOMContentLoaded", () => {
-        initApplication();
+        updateMarketAndLists();
       });
     </script>
   </body>
