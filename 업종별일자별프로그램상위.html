@@ -1,0 +1,417 @@
+<!--업종별일자별프로그램상위-->
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Kiwoom 프로그램 순위 및 추이 차트</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 10px;
+        background-color: #f4f4f4;
+        margin: 0;
+      }
+      .container {
+        width: 100%;
+        max-width: 900px;
+        box-sizing: border-box;
+        margin: auto;
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        text-align: center;
+        color: #333;
+        font-size: 1.5em;
+        margin-bottom: 5px;
+      }
+      #timestamp {
+        text-align: right;
+        font-size: 0.85em;
+        color: #777;
+        margin-bottom: 15px;
+      }
+      .market-section {
+        margin-bottom: 30px;
+      }
+      .market-title {
+        font-size: 1.1em;
+        font-weight: bold;
+        color: #2c3e50;
+        border-left: 5px solid #3498db;
+        padding-left: 10px;
+        margin-bottom: 12px;
+      }
+      /* 🛠️ 차트 영역 스타일 추가 */
+      .chart-container {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        margin-bottom: 15px;
+      }
+      .chart-wrapper {
+        width: 100%;
+        max-width: 500px;
+        height: 120px;
+        background: #fafafa;
+        border: 1px solid #e8e8e8;
+        border-radius: 4px;
+        position: relative;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .table-wrapper {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 1em;
+        background: #fff;
+        table-layout: fixed;
+      }
+      th, td {
+        padding: 10px 4px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+        word-break: break-all;
+      }
+      th:nth-child(1), td:nth-child(1) { width: 45%; }
+      th:nth-child(2), td:nth-child(2) { width: 25%; text-align: center; }
+      
+      th {
+        background-color: #f2f2f2;
+        color: #555;
+        font-size: 0.9em;
+      }
+      tr:hover {
+        background-color: #f9f9f9;
+      }
+      .loading, .error, .no-data {
+        text-align: center;
+        color: #888;
+        padding: 20px;
+        font-size: 0.9em;
+      }
+      .chart-msg {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 0;
+      }
+      .error { color: #d63031; }
+      .no-data {
+        color: #7f8c8d;
+        background: #fafafa;
+        border: 1px dashed #ccc;
+      }
+      @media (max-width: 480px) {
+        body { padding: 5px; }
+        .container { padding: 10px; }
+        h1 { font-size: 1.2em; }
+        table { font-size: 0.85em; }
+        th, td { padding: 8px 3px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1 id="page-title">프로그램 순매수 순위 및 추이 그래프</h1>
+      <div id="timestamp">최종 업데이트: -</div>
+
+      <div class="market-section">
+        <div class="market-title" id="kospi-title">코스피 시장 프로그램 추이 및 순위</div>
+        
+        <div class="chart-container">
+          <div class="chart-wrapper">
+            <canvas id="kospi-chart" width="500" height="120"></canvas>
+            <div id="kospi-chart-msg" class="loading chart-msg">그래프 데이터를 불러오는 중...</div>
+          </div>
+        </div>
+        
+        <div id="kospi-output">
+          <div class="loading">순위 데이터를 불러오는 중입니다...</div>
+        </div>
+      </div>
+
+      <div class="market-section">
+        <div class="market-title" id="kosdaq-title">코스닥 시장 프로그램 추이 및 순위</div>
+        
+        <div class="chart-container">
+          <div class="chart-wrapper">
+            <canvas id="kosdaq-chart" width="500" height="120"></canvas>
+            <div id="kosdaq-chart-msg" class="loading chart-msg">그래프 데이터를 불러오는 중...</div>
+          </div>
+        </div>
+        
+        <div id="kosdaq-output">
+          <div class="loading">순위 데이터를 불러오는 중입니다...</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let cachedToken = null;
+
+      const accessParams = {
+        grant_type: "client_credentials",
+        appkey: "-iQmyxQBQb0jmIS-JTaAbsQ1r7u3NhoMX78hMqBsobY",
+        secretkey: "y-fGxZn2OnsyvyqR9kXlTqUiwMuk6IJd6k3xeox0PTo",
+      };
+
+      // 1. 프로그램 매수 순위 파라미터 (ka90003)
+      const programParamsKospi = { trde_upper_tp: "2", amt_qty_tp: "1", mrkt_tp: "P00101", stex_tp: "3" };
+      const programParamsKosdaq = { trde_upper_tp: "2", amt_qty_tp: "1", mrkt_tp: "P10102", stex_tp: "3" };
+
+      // 2. 프로그램 일자별/시간별 추이 그래프 파라미터 (ka90010)
+      const chartParamsKospi = { date: '20261231', amt_qty_tp: '1', mrkt_tp: 'P00101', min_tic_tp: '1', stex_tp: '3' };
+      const chartParamsKosdaq = { date: '20261231', amt_qty_tp: '1', mrkt_tp: 'P10102', min_tic_tp: '1', stex_tp: '3' };
+
+      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+      // 토큰 발급
+      async function fetchToken() {
+        if (cachedToken) return cachedToken;
+        const url = "https://mockapi.kiwoom.com/oauth2/token";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json;charset=UTF-8" },
+          body: JSON.stringify(accessParams),
+        });
+        if (!res.ok) throw new Error(`토큰 발급 에러: ${res.status}`);
+        const data = await res.json();
+        cachedToken = data.token || data.access_token;
+        return cachedToken;
+      }
+
+      // 프로그램 순매수 상위 데이터 조회 (ka90003)
+      async function fetchProgramData(token, params) {
+        const url = "https://mockapi.kiwoom.com/api/dostk/stkinfo";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka90003",
+            "cont-yn": "N",
+            "next-key": "",
+          },
+          body: JSON.stringify(params),
+        });
+        if (!res.ok) {
+          if (res.status === 401) cachedToken = null; 
+          throw new Error(`데이터 통신 에러 (프로그램): ${res.status}`);
+        }
+        const data = await res.json();
+        return data.prm_netprps_upper_50 || [];
+      }
+
+      // 프로그램 일자별/시간별 추이 데이터 조회 (ka90010)
+      async function fetchMarketChartData(token, params) {
+        const url = "https://mockapi.kiwoom.com/api/dostk/mrkcond";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "api-id": "ka90010",
+            "cont-yn": "N",
+            "next-key": "",
+          },
+          body: JSON.stringify(params),
+        });
+        if (!res.ok) {
+          if (res.status === 401) cachedToken = null; 
+          throw new Error(`데이터 통신 에러 (차트): ${res.status}`);
+        }
+        const data = await res.json();
+        return data.prm_trde_trnsn || [];
+      }
+
+      function parseNetprps(value) {
+        if (!value) return 0;
+        let cleanValue = value.replace(/--/g, '-').replace(/\+/g, '');
+        return parseFloat(cleanValue) || 0;
+      }
+
+      // 0축 기준 양수/음수 봉차트(Bar Chart) 렌더링 함수
+      function drawMiniBarChart(canvasId, msgId, rawData) {
+        const canvas = document.getElementById(canvasId);
+        const msgDiv = document.getElementById(msgId);
+        
+        if (!rawData || rawData.length === 0) {
+          msgDiv.className = "no-data chart-msg";
+          msgDiv.innerText = "그래프 데이터가 없습니다.";
+          return;
+        }
+
+        // 시간 순 정렬
+        let chartData = rawData.map(item => ({
+          time: item.cntr_tm || "",
+          value: parseNetprps(item.all_netprps)
+        }));
+        chartData.sort((a, b) => a.time.localeCompare(b.time));
+
+        msgDiv.innerText = ""; 
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        const paddingY = 10; 
+        const paddingX = 5;  
+
+        // Y축의 절대값 최대치 계산 (0 기준 대칭 정렬)
+        const values = chartData.map(d => d.value);
+        const maxAbsVal = Math.max(...values.map(v => Math.abs(v)), 100); 
+
+        // 0 기준선의 Y 좌표 (정중앙)
+        const yZero = height / 2;
+
+        const dataCount = chartData.length;
+        const availableWidth = width - (paddingX * 2);
+        
+        const barWidth = Math.max(1.5, (availableWidth / dataCount) * 0.7);
+        const xStep = availableWidth / (dataCount - 1 || 1);
+
+        ctx.clearRect(0, 0, width, height);
+
+        // 0 수평 기준선 (점선) 그리기
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = '#b2bec3';
+        ctx.lineWidth = 1;
+        ctx.moveTo(0, yZero);
+        ctx.lineTo(width, yZero);
+        ctx.stroke();
+        ctx.restore();
+
+        // 데이터 순회하며 위아래로 봉(Bar) 그리기
+        chartData.forEach((point, index) => {
+          const x = paddingX + (index * xStep) - (barWidth / 2);
+          const usableHeight = (height / 2) - paddingY;
+          const barHeight = (point.value / maxAbsVal) * usableHeight;
+
+          if (point.value >= 0) {
+            ctx.fillStyle = '#e17055'; // 상승 빨간색
+          } else {
+            ctx.fillStyle = '#0984e3'; // 하락 파란색
+          }
+
+          ctx.fillRect(x, yZero, barWidth, -barHeight);
+        });
+      }
+
+      // 테이블 HTML 생성
+      function createTableHTML(rawData) {
+        if (!rawData || rawData.length === 0) {
+          return `<div class="error">조회된 순위 데이터가 없습니다.</div>`;
+        }
+
+        // 등락률에 '+' 기호가 붙은 상승 종목만 필터링
+        const positiveData = rawData.filter(item => {
+          if (!item.flu_rt) return false;
+          return String(item.flu_rt).trim().includes("+");
+        });
+
+        if (positiveData.length === 0) {
+          return `<div class="no-data">현재 등락률이 + 인 상승 종목이 없습니다.</div>`;
+        }
+
+        return `
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>종목명</th>
+                  <th style="text-align: center;">등락률</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${positiveData
+                  .map((item) => {
+                    let displayFluRt = String(item.flu_rt).trim();
+                    if (!displayFluRt.includes("%")) displayFluRt += "%";
+
+                    return `
+                      <tr>
+                        <td><strong>${item.stk_nm || "-"}</strong></td>
+                        <td style="color: #d63031; font-weight: bold; text-align: center;">${displayFluRt}</td>
+                      </tr>
+                    `;
+                  })
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      function updateTimestamp() {
+        const timestampElement = document.getElementById("timestamp");
+        if (timestampElement) {
+          const now = new Date();
+          timestampElement.innerText = `최종 업데이트: ${now.toLocaleTimeString()}`;
+        }
+      }
+
+      // 메인 데이터 업데이트 실행 플로우
+      async function updateData() {
+        const kospiOutput = document.getElementById("kospi-output");
+        const kosdaqOutput = document.getElementById("kosdaq-output");
+
+        try {
+          const token = await fetchToken();
+
+          // 1. 코스피 연동 (프로그램 순위 테이블 + 추이 그래프)
+          try {
+            const kospiProgData = await fetchProgramData(token, programParamsKospi);
+            kospiOutput.innerHTML = createTableHTML(kospiProgData);
+
+            const kospiChartData = await fetchMarketChartData(token, chartParamsKospi);
+            drawMiniBarChart("kospi-chart", "kospi-chart-msg", kospiChartData);
+          } catch (err) {
+            kospiOutput.innerHTML = `<div class="error">코스피 데이터 수신 실패: ${err.message}</div>`;
+            document.getElementById("kospi-chart-msg").innerText = "차트 수신 실패";
+          }
+
+          // API 연속 호출 과부하 방지 디레이 (1초)
+          await delay(1000);
+
+          // 2. 코스닥 연동 (프로그램 순위 테이블 + 추이 그래프)
+          try {
+            const kosdaqProgData = await fetchProgramData(token, programParamsKosdaq);
+            kosdaqOutput.innerHTML = createTableHTML(kosdaqProgData);
+
+            const kosdaqChartData = await fetchMarketChartData(token, chartParamsKosdaq);
+            drawMiniBarChart("kosdaq-chart", "kosdaq-chart-msg", kosdaqChartData);
+          } catch (err) {
+            kosdaqOutput.innerHTML = `<div class="error">코스닥 데이터 수신 실패: ${err.message}</div>`;
+            document.getElementById("kosdaq-chart-msg").innerText = "차트 수신 실패";
+          }
+
+          updateTimestamp();
+
+        } catch (e) {
+          console.error("인증 에러:", e);
+          if (kospiOutput) kospiOutput.innerHTML = `<div class="error">인증 오류 또는 서버 점검 중입니다.</div>`;
+          if (kosdaqOutput) kosdaqOutput.innerHTML = `<div class="error">인증 오류 또는 서버 점검 중입니다.</div>`;
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        updateData();
+        // 12초마다 자동 갱신 트리거 설정 (원치 않으시면 아래 줄을 주석처리 하세요)
+        setInterval(updateData, 12000); 
+      });
+    </script>
+  </body>
+</html>
