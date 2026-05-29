@@ -618,7 +618,7 @@
             console.error("코스피 시장 데이터 실패:", err);
           }
 
-          await delay(500);
+          await delay(1000);
 
           try {
             const kosdaqMarketData = await fetchMarketTrendData(token, chartParamsKosdaq);
@@ -627,7 +627,7 @@
             console.error("코스닥 시장 데이터 실패:", err);
           }
 
-          await delay(500);
+          await delay(1000);
 
           try {
             const kospiProgData = await fetchProgramData(token, programParamsKospi);
@@ -639,7 +639,7 @@
             kospiOutput.innerHTML = `<div class="error">코스피 갱신 실패</div>`;
           }
 
-          await delay(500);
+          await delay(1000);
 
           try {
             const kosdaqProgData = await fetchProgramData(token, programParamsKosdaq);
